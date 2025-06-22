@@ -26,12 +26,7 @@ class BackgroundService {
                 geminiModel: 'gemini-1.5-flash',
                 defaultTone: 'formal',
                 maxTokens: 300,
-                temperature: 0.7,
-                analyzeAttachments: false,
-                translationLanguage: 'English',
-                assistantOptions: {
-                    selectedAction: 'generateResponse'
-                }
+                temperature: 0.7
             });
 
             // Extension icon will show popup for API key setup
@@ -83,10 +78,7 @@ class BackgroundService {
                 'geminiModel',
                 'defaultTone',
                 'maxTokens',
-                'temperature',
-                'analyzeAttachments',
-                'assistantOptions',
-                'translationLanguage'
+                'temperature'
             ], (result) => {
                 resolve(result);
             });
