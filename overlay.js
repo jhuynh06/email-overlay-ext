@@ -46,6 +46,7 @@ class EmailOverlay {
         // Create main overlay container
         this.overlay = document.createElement('div');
         this.overlay.className = 'ai-email-overlay';
+        this.overlay.setAttribute('data-ai-overlay', 'true');
         
         // Create generate button
         const generateBtn = document.createElement('button');
@@ -193,21 +194,37 @@ class EmailOverlay {
     }
 
     inject() {
-        // Find the compose area container
-        let container = this.composeElement.closest('[role="dialog"]') || 
-                       this.composeElement.closest('.nH') ||
-                       this.composeElement.closest('.ms-Panel-main') ||
-                       this.composeElement.parentElement;
+        // Grammarly-style injection: position relative to the compose element itself
+        const composeElement = this.composeElement;
         
-        // Set container position to relative if not already positioned
-        const computedStyle = window.getComputedStyle(container);
+        // Ensure the compose element has relative positioning
+        const computedStyle = window.getComputedStyle(composeElement);
         if (computedStyle.position === 'static') {
-            container.style.position = 'relative';
+            composeElement.style.position = 'relative';
         }
         
-        // Inject overlay
-        container.appendChild(this.overlay);
+        // Create a wrapper if the element doesn't have one
+        let wrapper = composeElement.parentElement;
+        if (!wrapper || wrapper.tagName === 'BODY') {
+            wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.display = 'inline-block';
+            wrapper.style.width = '100%';
+            
+            composeElement.parentElement.insertBefore(wrapper, composeElement);
+            wrapper.appendChild(composeElement);
+        }
+        
+        // Ensure wrapper has relative positioning
+        if (window.getComputedStyle(wrapper).position === 'static') {
+            wrapper.style.position = 'relative';
+        }
+        
+        // Inject overlay into the wrapper (like Grammarly does)
+        wrapper.appendChild(this.overlay);
         this.isVisible = true;
+        
+        console.log('Overlay injected into wrapper', wrapper);
     }
 
     async handleGenerateClick() {
