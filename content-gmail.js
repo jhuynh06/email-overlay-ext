@@ -66,50 +66,140 @@ class UniversalEmailAssistant {
     isEmailContext(element) {
         if (!element) return false;
         
-        // Check if we're in Gmail or Outlook
+        // Only work in Gmail for this specific fix
         const isGmail = window.location.hostname.includes('mail.google.com');
-        const isOutlook = window.location.hostname.includes('outlook');
+        if (!isGmail) return false;
         
-        if (!isGmail && !isOutlook) return false;
-        
-        // Check element properties for email indicators
-        const text = element.textContent || '';
+        // First, exclude elements that are definitely NOT reply compose areas
         const placeholder = element.getAttribute('placeholder') || '';
         const ariaLabel = element.getAttribute('aria-label') || '';
         const className = element.className || '';
+        const id = element.id || '';
         
-        // Look for email-related keywords
-        const emailKeywords = [
-            'compose', 'reply', 'message', 'email', 'editable', 'body'
-        ];
-        
-        const hasEmailKeyword = emailKeywords.some(keyword => 
+        // Exclude search boxes, subject lines, and other non-compose areas
+        const excludeKeywords = ['search', 'subject', 'to:', 'cc:', 'bcc:', 'from:'];
+        const isExcluded = excludeKeywords.some(keyword => 
             placeholder.toLowerCase().includes(keyword) ||
             ariaLabel.toLowerCase().includes(keyword) ||
-            className.toLowerCase().includes(keyword)
+            className.toLowerCase().includes(keyword) ||
+            id.toLowerCase().includes(keyword)
         );
         
-        // Check if it's in a compose dialog
-        const inComposeDialog = element.closest('[role="dialog"]') ||
-                               element.closest('.nH') ||  // Gmail
-                               element.closest('.M9') ||  // Gmail compose
-                               element.closest('[data-app-section="Compose"]'); // Outlook
+        if (isExcluded) {
+            console.log('Email context excluded - not a compose area:', element);
+            return false;
+        }
         
-        // Must be reasonably sized (email compose areas are big)
+        // Only proceed if this is in a reply context, NOT a new compose
+        const isInReplyContext = this.isInGmailReplyContext(element);
+        if (!isInReplyContext) {
+            console.log('Email context rejected - not in reply context:', element);
+            return false;
+        }
+        
+        // Check if it's a content-editable message body area (Gmail reply compose)
+        const isContentEditable = element.contentEditable === 'true' || 
+                                  element.getAttribute('contenteditable') === 'true';
+        const hasRole = element.getAttribute('role') === 'textbox';
+        const isTextArea = element.tagName === 'TEXTAREA';
+        
+        const isTextInput = isContentEditable || hasRole || isTextArea;
+        
+        // Must be reasonably sized (reply compose areas are big)
         const rect = element.getBoundingClientRect();
-        const isReasonableSize = rect.width > 200 && rect.height > 50;
+        const isReasonableSize = rect.width > 300 && rect.height > 80;
         
-        const isEmailField = hasEmailKeyword || inComposeDialog || isReasonableSize;
+        // Final check: is this actually a message body compose area?
+        const isMessageBody = this.isGmailMessageBody(element);
+        
+        const isEmailField = isTextInput && isReasonableSize && isMessageBody;
         
         console.log('Email context check:', {
             element,
-            hasEmailKeyword,
-            inComposeDialog,
+            isInReplyContext,
+            isTextInput,
             isReasonableSize,
+            isMessageBody,
             isEmailField
         });
         
         return isEmailField;
+    }
+    
+    isInGmailReplyContext(element) {
+        // Check if we're in a reply compose context by looking for Gmail reply indicators
+        
+        // Method 1: Look for reply/forward indicators in the URL or page
+        const url = window.location.href;
+        const hasReplyInUrl = url.includes('compose') && (url.includes('reply') || url.includes('fwd'));
+        
+        // Method 2: Look for the quoted message content that appears in replies
+        const hasQuotedContent = document.querySelector('.gmail_quote') ||
+                                document.querySelector('.gmail_extra') ||
+                                document.querySelector('[class*="quote"]');
+        
+        // Method 3: Check if we're in a conversation thread (not standalone compose)
+        const inConversationThread = document.querySelector('[data-message-id]') ||
+                                    document.querySelector('.h7') ||  // Gmail thread container
+                                    document.querySelector('.ConversationView');
+        
+        // Method 4: Look for reply/forward specific containers
+        const replyContainer = element.closest('.Am') ||  // Gmail reply container
+                              element.closest('.aoI') ||  // Gmail compose area in thread
+                              element.closest('.IZ');     // Gmail inline reply
+        
+        // Method 5: Check if there are multiple messages in thread (indicating reply context)
+        const messageCount = document.querySelectorAll('[data-message-id]').length;
+        const hasMultipleMessages = messageCount > 1;
+        
+        const isReplyContext = hasReplyInUrl || hasQuotedContent || 
+                              (inConversationThread && replyContainer) ||
+                              hasMultipleMessages;
+        
+        console.log('Gmail reply context check:', {
+            hasReplyInUrl,
+            hasQuotedContent,
+            inConversationThread,
+            replyContainer,
+            hasMultipleMessages,
+            isReplyContext
+        });
+        
+        return isReplyContext;
+    }
+    
+    isGmailMessageBody(element) {
+        // Check if this element is specifically a Gmail message body compose area
+        
+        // Look for Gmail-specific message body identifiers
+        const gmailBodySelectors = [
+            '[aria-label*="Message Body"]',
+            '[aria-label*="message body"]',
+            '.Am.Al.editable',  // Gmail reply compose body
+            '.editable[role="textbox"]',
+            '[g_editable="true"]'
+        ];
+        
+        // Check if element matches any Gmail body selectors
+        const isGmailBody = gmailBodySelectors.some(selector => {
+            return element.matches(selector) || element.closest(selector);
+        });
+        
+        // Additional check: ensure it's not in toolbar or header areas
+        const isInToolbar = element.closest('.ams') ||  // Gmail toolbar
+                           element.closest('.aoD') ||   // Gmail compose header
+                           element.closest('.wO');      // Gmail compose options
+        
+        const validMessageBody = isGmailBody && !isInToolbar;
+        
+        console.log('Gmail message body check:', {
+            element,
+            isGmailBody,
+            isInToolbar,
+            validMessageBody
+        });
+        
+        return validMessageBody;
     }
 
     showOverlay(textElement) {
