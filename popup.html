@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 350px;
+            min-height: 400px;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 5px 0 0 0;
+            opacity: 0.8;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            backdrop-filter: blur(10px);
+            box-sizing: border-box;
+        }
+        
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn-primary:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .status.show {
+            opacity: 1;
+        }
+        
+        .status.success {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+        }
+        
+        .status.error {
+            background: rgba(244, 67, 54, 0.3);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+        }
+        
+        .advanced-settings {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .toggle-advanced {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-bottom: 15px;
+        }
+        
+        .advanced-content {
+            display: none;
+        }
+        
+        .advanced-content.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>AI Email Assistant</h1>
+        <p>Powered by Google Gemini</p>
+    </div>
+    
+    <form id="settingsForm">
+        <div class="form-group">
+            <label for="apiKey">Google Gemini API Key</label>
+            <input type="password" id="apiKey" placeholder="Enter your API key" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="defaultTone">Default Response Tone</label>
+            <select id="defaultTone">
+                <option value="formal">Formal</option>
+                <option value="casual">Casual</option>
+                <option value="brief">Brief</option>
+                <option value="detailed">Detailed</option>
+                <option value="friendly">Friendly</option>
+                <option value="professional">Professional</option>
+            </select>
+        </div>
+        
+        <div class="advanced-settings">
+            <button type="button" class="toggle-advanced" id="toggleAdvanced">Advanced Settings ▼</button>
+            <div class="advanced-content" id="advancedContent">
+                <div class="form-group">
+                    <label for="maxTokens">Max Response Length</label>
+                    <select id="maxTokens">
+                        <option value="150">Short (150 words)</option>
+                        <option value="300" selected>Medium (300 words)</option>
+                        <option value="500">Long (500 words)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="temperature">Response Creativity</label>
+                    <select id="temperature">
+                        <option value="0.3">Conservative</option>
+                        <option value="0.7" selected>Balanced</option>
+                        <option value="0.9">Creative</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary" id="saveBtn">Save Settings</button>
+            <button type="button" class="btn btn-secondary" id="testBtn">Test API</button>
+        </div>
+    </form>
+    
+    <div class="status" id="status"></div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "AI Email Assistant",
+  "version": "1.0",
+  "description": "AI-powered email assistant using Google Gemini API",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://outlook.live.com/*",
+    "https://outlook.office.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": ["overlay.js", "content-gmail.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://outlook.live.com/*",
+        "https://outlook.office.com/*"
+      ],
+      "js": ["overlay.js", "content-outlook.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Email Assistant"
+  }
+}
