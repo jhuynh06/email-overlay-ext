@@ -269,9 +269,7 @@ class UniversalEmailAssistant {
                 analyzeAttachments: false 
             };
             let assistantOptions = {
-                generateResponse: true,
-                analyzeEmail: false,
-                translateEmail: false
+                selectedAction: 'generateResponse'
             };
             
             try {
@@ -289,58 +287,56 @@ class UniversalEmailAssistant {
             console.log('Sending context to Gemini:', emailContext);
 
             let results = [];
+            const selectedAction = assistantOptions.selectedAction || 'generateResponse';
             
-            // Perform selected actions - each independently with error handling
-            if (assistantOptions.generateResponse) {
-                try {
-                    console.log('Starting response generation...');
-                    const response = await this.overlayInstance.geminiService.generateResponse(
-                        emailContext,
-                        settings.geminiModel || 'gemini-1.5-flash',
-                        settings.defaultTone || 'formal',
-                        settings.maxTokens || 300,
-                        settings.temperature || 0.7,
-                        settings.analyzeAttachments || false
-                    );
-                    
-                    if (response) {
-                        this.insertResponse(textElement, response);
-                        results.push('Response generated');
-                        console.log('Response generation completed');
-                    }
-                } catch (error) {
-                    console.error('Response generation failed:', error);
-                    results.push('Response generation failed');
+            // Perform the selected action
+            try {
+                switch (selectedAction) {
+                    case 'generateResponse':
+                        console.log('Starting response generation...');
+                        const response = await this.overlayInstance.geminiService.generateResponse(
+                            emailContext,
+                            settings.geminiModel || 'gemini-1.5-flash',
+                            settings.defaultTone || 'formal',
+                            settings.maxTokens || 300,
+                            settings.temperature || 0.7,
+                            settings.analyzeAttachments || false
+                        );
+                        
+                        if (response) {
+                            this.insertResponse(textElement, response);
+                            results.push('Response generated');
+                            console.log('Response generation completed');
+                        }
+                        break;
+                        
+                    case 'analyzeEmail':
+                        console.log('Starting email analysis...');
+                        const analysis = await this.overlayInstance.geminiService.generateSummary(
+                            emailContext,
+                            settings.geminiModel || 'gemini-1.5-flash'
+                        );
+                        
+                        if (analysis) {
+                            this.showAnalysisModal(analysis);
+                            results.push('Email analyzed');
+                            console.log('Email analysis completed');
+                        }
+                        break;
+                        
+                    case 'translateEmail':
+                        console.log('Starting translation...');
+                        this.showTranslationPlaceholder();
+                        results.push('Translation (coming soon)');
+                        break;
+                        
+                    default:
+                        console.warn('Unknown action:', selectedAction);
+                        results.push('Unknown action');
                 }
-            }
-            
-            if (assistantOptions.analyzeEmail) {
-                try {
-                    console.log('Starting email analysis...');
-                    const analysis = await this.overlayInstance.geminiService.generateSummary(
-                        emailContext,
-                        settings.geminiModel || 'gemini-1.5-flash'
-                    );
-                    
-                    if (analysis) {
-                        this.showAnalysisModal(analysis);
-                        results.push('Email analyzed');
-                        console.log('Email analysis completed');
-                    }
-                } catch (error) {
-                    console.error('Email analysis failed:', error);
-                    results.push('Email analysis failed');
-                }
-            }
-            
-            if (assistantOptions.translateEmail) {
-                try {
-                    console.log('Starting translation...');
-                    this.showTranslationPlaceholder();
-                    results.push('Translation (coming soon)');
-                } catch (error) {
-                    console.error('Translation failed:', error);
-                }
+            } catch (error) {
+                console.error(`${selectedAction} failed:`, error);
+                results.push(`${selectedAction} failed`);
             }
             
             // Update button text based on results
@@ -486,16 +482,12 @@ class UniversalEmailAssistant {
             ]);
             
             return result.assistantOptions || {
-                generateResponse: true,
-                analyzeEmail: false,
-                translateEmail: false
+                selectedAction: 'generateResponse'
             };
         } catch (error) {
             console.error('Error loading assistant options:', error);
             return {
-                generateResponse: true,
-                analyzeEmail: false,
-                translateEmail: false
+                selectedAction: 'generateResponse'
             };
         }
     }
@@ -513,11 +505,11 @@ class UniversalEmailAssistant {
                 
                 <div class="ai-options-body">
                     <div class="ai-options-section">
-                        <h4>Choose Actions</h4>
-                        <p>Select which actions you want the AI assistant to perform when you click the generate button.</p>
+                        <h4>Choose Action</h4>
+                        <p>Select which action you want the AI assistant to perform when you click the generate button.</p>
                         
                         <div class="ai-option-item" data-option="generateResponse">
-                            <input type="checkbox" id="opt-generate" ${settings.generateResponse ? 'checked' : ''}>
+                            <input type="radio" name="assistantAction" id="opt-generate" value="generateResponse" ${(settings.selectedAction === 'generateResponse' || !settings.selectedAction) ? 'checked' : ''}>
                             <div class="ai-option-details">
                                 <div class="ai-option-title">Generate Email Response</div>
                                 <div class="ai-option-description">Create a contextual reply based on the original email content and your chosen tone.</div>
@@ -525,7 +517,7 @@ class UniversalEmailAssistant {
                         </div>
                         
                         <div class="ai-option-item" data-option="analyzeEmail">
-                            <input type="checkbox" id="opt-analyze" ${settings.analyzeEmail ? 'checked' : ''}>
+                            <input type="radio" name="assistantAction" id="opt-analyze" value="analyzeEmail" ${settings.selectedAction === 'analyzeEmail' ? 'checked' : ''}>
                             <div class="ai-option-details">
                                 <div class="ai-option-title">Analyze & Summarize Email</div>
                                 <div class="ai-option-description">Provide a summary of key points, action items, and important details from the email.</div>
@@ -533,7 +525,7 @@ class UniversalEmailAssistant {
                         </div>
                         
                         <div class="ai-option-item" data-option="translateEmail">
-                            <input type="checkbox" id="opt-translate" ${settings.translateEmail ? 'checked' : ''}>
+                            <input type="radio" name="assistantAction" id="opt-translate" value="translateEmail" ${settings.selectedAction === 'translateEmail' ? 'checked' : ''}>
                             <div class="ai-option-details">
                                 <div class="ai-option-title">Translate Email</div>
                                 <div class="ai-option-description">Translate the email content to your preferred language. (Coming soon)</div>
@@ -572,13 +564,13 @@ class UniversalEmailAssistant {
             }
         });
 
-        // Checkbox toggle on item click
+        // Radio button selection on item click
         const optionItems = modal.querySelectorAll('.ai-option-item');
         optionItems.forEach(item => {
             item.addEventListener('click', (e) => {
-                if (e.target.type !== 'checkbox') {
-                    const checkbox = item.querySelector('input[type="checkbox"]');
-                    checkbox.checked = !checkbox.checked;
+                if (e.target.type !== 'radio') {
+                    const radio = item.querySelector('input[type="radio"]');
+                    radio.checked = true;
                 }
             });
         });
@@ -603,10 +595,11 @@ class UniversalEmailAssistant {
     }
 
     async saveOptionsModal(modal) {
+        const selectedRadio = modal.querySelector('input[name="assistantAction"]:checked');
+        const selectedAction = selectedRadio ? selectedRadio.value : 'generateResponse';
+        
         const settings = {
-            generateResponse: modal.querySelector('#opt-generate').checked,
-            analyzeEmail: modal.querySelector('#opt-analyze').checked,
-            translateEmail: modal.querySelector('#opt-translate').checked
+            selectedAction: selectedAction
         };
 
         try {
