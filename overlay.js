@@ -409,16 +409,37 @@ class GeminiService {
             }
         }
 
-        const prompt = this.buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments);
+        let uploadedFiles = [];
+        
+        // Upload attachments if analyze attachments is enabled and files are available
+        if (analyzeAttachments && emailContext.attachmentFiles && emailContext.attachmentFiles.length > 0) {
+            console.log('Uploading attachments for analysis...');
+            uploadedFiles = await this.uploadAttachments(emailContext.attachmentFiles);
+        }
+
+        const prompt = this.buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments, uploadedFiles);
         
         // Use Flash model for better rate limits and faster responses
         const selectedModel = model || 'gemini-1.5-flash';
         
+        // Build content parts with text and file references
+        const contentParts = [{ text: prompt }];
+        
+        // Add file references to the request
+        if (uploadedFiles.length > 0) {
+            uploadedFiles.forEach(file => {
+                contentParts.push({
+                    fileData: {
+                        mimeType: file.mimeType,
+                        fileUri: file.uri
+                    }
+                });
+            });
+        }
+        
         return this.makeRequestWithRetry(selectedModel, {
             contents: [{
-                parts: [{
-                    text: prompt
-                }]
+                parts: contentParts
             }],
             generationConfig: {
                 temperature: temperature,
@@ -491,7 +512,167 @@ class GeminiService {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async generateSummary(emailContext, model) {
+    async uploadAttachments(attachmentFiles) {
+        const uploadedFiles = [];
+        const maxFiles = Math.min(attachmentFiles.length, 5); // Limit to 5 files for performance
+        
+        console.log(`Attempting to upload ${maxFiles} attachments...`);
+        
+        for (let i = 0; i < maxFiles; i++) {
+            const file = attachmentFiles[i];
+            try {
+                const uploadedFile = await this.uploadFileToGemini(file);
+                if (uploadedFile) {
+                    uploadedFiles.push(uploadedFile);
+                    console.log(`Successfully uploaded: ${file.name}`);
+                }
+            } catch (error) {
+                console.warn(`Failed to upload ${file.name}:`, error);
+            }
+        }
+        
+        console.log(`Successfully uploaded ${uploadedFiles.length} out of ${maxFiles} files`);
+        return uploadedFiles;
+    }
+
+    async uploadFileToGemini(fileInfo) {
+        try {
+            // First, get the file content
+            const fileData = await this.getFileContent(fileInfo);
+            if (!fileData) {
+                console.warn(`Could not get content for ${fileInfo.name}`);
+                return null;
+            }
+
+            // Step 1: Initialize upload with metadata
+            const initResponse = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${this.apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Goog-Upload-Protocol': 'resumable',
+                    'X-Goog-Upload-Command': 'start',
+                    'X-Goog-Upload-Header-Content-Length': fileData.size.toString(),
+                    'X-Goog-Upload-Header-Content-Type': fileInfo.type
+                },
+                body: JSON.stringify({
+                    file: {
+                        displayName: fileInfo.name,
+                        mimeType: fileInfo.type
+                    }
+                })
+            });
+
+            if (!initResponse.ok) {
+                throw new Error(`Upload initialization failed: ${initResponse.status}`);
+            }
+
+            const uploadUrl = initResponse.headers.get('X-Goog-Upload-URL');
+            if (!uploadUrl) {
+                throw new Error('No upload URL received from initialization');
+            }
+
+            // Step 2: Upload the actual file data
+            const uploadResponse = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Length': fileData.size.toString(),
+                    'X-Goog-Upload-Offset': '0',
+                    'X-Goog-Upload-Command': 'upload, finalize'
+                },
+                body: fileData.content
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error(`File upload failed: ${uploadResponse.status}`);
+            }
+
+            const result = await uploadResponse.json();
+            console.log('Upload result:', result);
+
+            // Wait for file to be processed
+            await this.waitForFileProcessing(result.file.name);
+
+            return {
+                name: result.file.name,
+                displayName: fileInfo.name,
+                mimeType: fileInfo.type,
+                uri: result.file.uri
+            };
+
+        } catch (error) {
+            console.error(`Error uploading ${fileInfo.name}:`, error);
+            throw error;
+        }
+    }
+
+    async getFileContent(fileInfo) {
+        try {
+            if (fileInfo.dataUrl) {
+                // Convert data URL to blob
+                const response = await fetch(fileInfo.dataUrl);
+                const blob = await response.blob();
+                return {
+                    content: blob,
+                    size: blob.size
+                };
+            } else if (fileInfo.url) {
+                // Try to fetch from URL (may not work due to CORS)
+                try {
+                    const response = await fetch(fileInfo.url);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        return {
+                            content: blob,
+                            size: blob.size
+                        };
+                    }
+                } catch (fetchError) {
+                    console.warn(`Could not fetch file from URL: ${fetchError.message}`);
+                }
+            }
+            
+            // For other cases, try to trigger download and capture
+            // This is limited by browser security, so we'll return null
+            console.warn(`Cannot access file content for ${fileInfo.name} - file may need manual processing`);
+            return null;
+
+        } catch (error) {
+            console.error('Error getting file content:', error);
+            return null;
+        }
+    }
+
+    async waitForFileProcessing(fileName, maxWaitTime = 30000) {
+        const startTime = Date.now();
+        const pollInterval = 2000; // 2 seconds
+        
+        while (Date.now() - startTime < maxWaitTime) {
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${this.apiKey}`);
+                
+                if (response.ok) {
+                    const fileInfo = await response.json();
+                    console.log(`File ${fileName} state: ${fileInfo.state}`);
+                    
+                    if (fileInfo.state === 'ACTIVE') {
+                        return true;
+                    } else if (fileInfo.state === 'FAILED') {
+                        throw new Error(`File processing failed for ${fileName}`);
+                    }
+                    // If PROCESSING, continue waiting
+                }
+                
+                await this.sleep(pollInterval);
+            } catch (error) {
+                console.warn(`Error checking file status: ${error.message}`);
+                await this.sleep(pollInterval);
+            }
+        }
+        
+        throw new Error(`File processing timeout for ${fileName}`);
+    }
+
+    async generateSummary(emailContext, model, analyzeAttachments = false) {
         if (!this.apiKey) {
             await this.loadApiKey();
             if (!this.apiKey) {
@@ -499,20 +680,41 @@ class GeminiService {
             }
         }
 
-        const prompt = this.buildSummaryPrompt(emailContext);
+        let uploadedFiles = [];
+        
+        // Upload attachments if analyze attachments is enabled and files are available
+        if (analyzeAttachments && emailContext.attachmentFiles && emailContext.attachmentFiles.length > 0) {
+            console.log('Uploading attachments for summary analysis...');
+            uploadedFiles = await this.uploadAttachments(emailContext.attachmentFiles);
+        }
+
+        const prompt = this.buildSummaryPrompt(emailContext, uploadedFiles);
         
         // Use Flash model for better rate limits
         const selectedModel = model || 'gemini-1.5-flash';
         
+        // Build content parts with text and file references
+        const contentParts = [{ text: prompt }];
+        
+        // Add file references to the request
+        if (uploadedFiles.length > 0) {
+            uploadedFiles.forEach(file => {
+                contentParts.push({
+                    fileData: {
+                        mimeType: file.mimeType,
+                        fileUri: file.uri
+                    }
+                });
+            });
+        }
+        
         const response = await this.makeRequestWithRetry(selectedModel, {
             contents: [{
-                parts: [{
-                    text: prompt
-                }]
+                parts: contentParts
             }],
             generationConfig: {
                 temperature: 0.3,
-                maxOutputTokens: 512,
+                maxOutputTokens: 1024, // Increased for attachment analysis
                 topK: 20,
                 topP: 0.8
             }
@@ -521,7 +723,7 @@ class GeminiService {
         return this.formatSummary(response);
     }
 
-    buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments = false) {
+    buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments = false, uploadedFiles = []) {
         let prompt = `You are an AI email assistant. Write a specific email response based on the exact context provided below.\n\n`;
         
         prompt += `CRITICAL INSTRUCTIONS:\n`;
@@ -529,7 +731,15 @@ class GeminiService {
         prompt += `- Do NOT make up information or add topics not discussed\n`;
         prompt += `- Use the actual sender's name (no placeholders like [Name])\n`;
         prompt += `- Keep responses focused and concise\n`;
-        prompt += `- Do NOT include generic advice unless specifically requested\n\n`;
+        prompt += `- Do NOT include generic advice unless specifically requested\n`;
+        
+        if (uploadedFiles.length > 0) {
+            prompt += `- ANALYZE the attached files and incorporate their content into your response\n`;
+            prompt += `- Refer to specific details, findings, or information from the attachments\n`;
+            prompt += `- Do NOT just mention the file names - discuss what's actually IN the files\n`;
+        }
+        
+        prompt += `\n`;
         
         // Build the email context clearly
         prompt += `EMAIL CONTEXT:\n`;
@@ -552,7 +762,13 @@ class GeminiService {
             prompt += `\nThis appears to be a new email composition.\n\n`;
         }
         
-        if (analyzeAttachments && emailContext.attachments) {
+        if (analyzeAttachments && uploadedFiles.length > 0) {
+            prompt += `ATTACHED FILES FOR ANALYSIS:\n`;
+            uploadedFiles.forEach((file, index) => {
+                prompt += `${index + 1}. ${file.displayName} (${file.mimeType})\n`;
+            });
+            prompt += `\nPlease analyze the content of these files and incorporate your findings into the response.\n\n`;
+        } else if (analyzeAttachments && emailContext.attachments) {
             prompt += `Attachments mentioned: ${emailContext.attachments}\n\n`;
         }
         
@@ -589,17 +805,22 @@ class GeminiService {
         prompt += `- Do not include signature or closing (user will add their own)\n`;
         prompt += `- Do NOT include subject line, headers, or email metadata\n`;
         prompt += `- ONLY provide the message body content\n`;
-        prompt += `- Be specific and relevant to the actual request\n\n`;
+        prompt += `- Be specific and relevant to the actual request\n`;
         
-        prompt += `Write ONLY the email message body now (no subject, no headers):`;
+        if (uploadedFiles.length > 0) {
+            prompt += `- Reference specific content from the attached files in your response\n`;
+            prompt += `- Provide insights or analysis based on what you see in the attachments\n`;
+        }
+        
+        prompt += `\n\nWrite ONLY the email message body now (no subject, no headers):`;
         
         console.log('Generated prompt for Gemini:', prompt);
         
         return prompt;
     }
 
-    buildSummaryPrompt(emailContext) {
-        let prompt = `Please provide a concise summary of this email, highlighting key points and any action items:\n\n`;
+    buildSummaryPrompt(emailContext, uploadedFiles = []) {
+        let prompt = `Please provide a comprehensive summary of this email, highlighting key points and any action items:\n\n`;
         
         if (emailContext.subject) {
             prompt += `Subject: ${emailContext.subject}\n`;
@@ -611,17 +832,31 @@ class GeminiService {
             prompt += `This appears to be a new email composition.\n\n`;
         }
         
+        if (uploadedFiles.length > 0) {
+            prompt += `ATTACHED FILES FOR ANALYSIS:\n`;
+            uploadedFiles.forEach((file, index) => {
+                prompt += `${index + 1}. ${file.displayName} (${file.mimeType})\n`;
+            });
+            prompt += `\nPlease analyze the content of these files and include key findings in your summary.\n\n`;
+        }
+        
         prompt += `Please provide:\n`;
         prompt += `1. A brief summary of the main topic\n`;
-        prompt += `2. Key points mentioned\n`;
+        prompt += `2. Key points mentioned in the email\n`;
         prompt += `3. Any action items or requests\n`;
-        prompt += `4. Important dates or deadlines (if mentioned)\n\n`;
-        prompt += `Format the response with <strong> tags around important terms and <span class="highlight"> tags around action items.`;
+        prompt += `4. Important dates or deadlines (if mentioned)\n`;
+        
+        if (uploadedFiles.length > 0) {
+            prompt += `5. Summary of attachment content and key findings\n`;
+            prompt += `6. How the attachments relate to the email content\n`;
+        }
+        
+        prompt += `\nFormat the response with <strong> tags around important terms and <span class="highlight"> tags around action items.`;
         
         return prompt;
     }
 
-    async translateEmail(emailContext, model, targetLanguage = 'English') {
+    async translateEmail(emailContext, model, targetLanguage = 'English', analyzeAttachments = false) {
         if (!this.apiKey) {
             await this.loadApiKey();
             if (!this.apiKey) {
@@ -629,16 +864,37 @@ class GeminiService {
             }
         }
 
-        const prompt = this.buildTranslationPrompt(emailContext, targetLanguage);
+        let uploadedFiles = [];
+        
+        // Upload attachments if analyze attachments is enabled and files are available
+        if (analyzeAttachments && emailContext.attachmentFiles && emailContext.attachmentFiles.length > 0) {
+            console.log('Uploading attachments for translation analysis...');
+            uploadedFiles = await this.uploadAttachments(emailContext.attachmentFiles);
+        }
+
+        const prompt = this.buildTranslationPrompt(emailContext, targetLanguage, uploadedFiles);
         
         // Use Flash model for better rate limits
         const selectedModel = model || 'gemini-1.5-flash';
         
+        // Build content parts with text and file references
+        const contentParts = [{ text: prompt }];
+        
+        // Add file references to the request
+        if (uploadedFiles.length > 0) {
+            uploadedFiles.forEach(file => {
+                contentParts.push({
+                    fileData: {
+                        mimeType: file.mimeType,
+                        fileUri: file.uri
+                    }
+                });
+            });
+        }
+        
         return this.makeRequestWithRetry(selectedModel, {
             contents: [{
-                parts: [{
-                    text: prompt
-                }]
+                parts: contentParts
             }],
             generationConfig: {
                 temperature: 0.3,
@@ -649,7 +905,7 @@ class GeminiService {
         });
     }
 
-    buildTranslationPrompt(emailContext, targetLanguage) {
+    buildTranslationPrompt(emailContext, targetLanguage, uploadedFiles = []) {
         let prompt = `Please translate the following email content to ${targetLanguage}. Maintain the original tone and meaning.\n\n`;
         
         if (emailContext.subject) {
@@ -662,9 +918,27 @@ class GeminiService {
             prompt += `This appears to be a new email composition.\n\n`;
         }
         
-        prompt += `Please provide a natural translation that preserves the original meaning and tone. Format the response as:\n`;
+        if (uploadedFiles.length > 0) {
+            prompt += `ATTACHED FILES FOR ANALYSIS:\n`;
+            uploadedFiles.forEach((file, index) => {
+                prompt += `${index + 1}. ${file.displayName} (${file.mimeType})\n`;
+            });
+            prompt += `\nPlease analyze the content of these files and include a summary of their content in the translation.\n\n`;
+        }
+        
+        prompt += `Please provide a natural translation that preserves the original meaning and tone.`;
+        
+        if (uploadedFiles.length > 0) {
+            prompt += ` Include a summary of any attachment content.`;
+        }
+        
+        prompt += ` Format the response as:\n`;
         prompt += `Subject: [translated subject]\n`;
         prompt += `Body: [translated email body]`;
+        
+        if (uploadedFiles.length > 0) {
+            prompt += `\nAttachment Summary: [summary of attachment content]`;
+        }
         
         return prompt;
     }

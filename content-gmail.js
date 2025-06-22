@@ -345,7 +345,7 @@ class UniversalEmailAssistant {
             generateBtn.style.opacity = '0.7';
             
             // Extract email context
-            const emailContext = this.extractEmailContext(textElement);
+            const emailContext = await this.extractEmailContext(textElement);
             
             // Create overlay instance if needed
             if (!this.overlayInstance) {
@@ -402,11 +402,10 @@ class UniversalEmailAssistant {
                         
                     case 'analyzeEmail':
                         console.log('Starting email analysis...');
-                        const targetLanguage = settings.translationLanguage || 'English';
                         const analysis = await this.overlayInstance.geminiService.generateSummary(
                             emailContext,
                             settings.geminiModel || 'gemini-1.5-flash',
-                            targetLanguage
+                            settings.analyzeAttachments || false
                         );
                         
                         if (analysis) {
@@ -422,7 +421,8 @@ class UniversalEmailAssistant {
                         const translation = await this.overlayInstance.geminiService.translateEmail(
                             emailContext,
                             settings.geminiModel || 'gemini-1.5-flash',
-                            translationLanguage
+                            translationLanguage,
+                            settings.analyzeAttachments || false
                         );
                         
                         if (translation) {
@@ -875,7 +875,7 @@ class UniversalEmailAssistant {
         return cleanedResponse.trim();
     }
 
-    extractEmailContext(element) {
+    async extractEmailContext(element) {
         const context = {
             subject: '',
             senderName: '',
@@ -909,7 +909,7 @@ class UniversalEmailAssistant {
             this.extractParticipantInfo(context);
 
             // Look for attachments in the email
-            this.extractAttachments(context);
+            await this.extractAttachments(context);
             
             console.log('Extracted context:', context);
             
@@ -1020,52 +1020,215 @@ class UniversalEmailAssistant {
         }
     }
 
-    extractAttachments(context) {
+    async extractAttachments(context) {
         try {
-            // Look for attachment indicators in Gmail
-            const attachmentSelectors = [
-                '[aria-label*="attachment"]',
-                '[title*="attachment"]',
-                '.aZo', // Gmail attachment class
-                '.aZo span[email]', // Gmail attachment with name
-                '.aQy', // Gmail attachment indicator
-                '[data-tooltip*="attachment"]'
-            ];
-
-            let attachments = [];
-
-            attachmentSelectors.forEach(selector => {
-                const elements = document.querySelectorAll(selector);
-                elements.forEach(el => {
-                    const text = el.textContent || el.getAttribute('aria-label') || el.getAttribute('title');
-                    if (text && text.trim()) {
-                        // Extract file names and types
-                        const fileMatch = text.match(/([^\/\\]+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?))/gi);
-                        if (fileMatch) {
-                            attachments = attachments.concat(fileMatch);
-                        }
-                    }
-                });
-            });
-
-            // Also check for file mentions in the email text
-            const emailText = context.originalEmail + (document.activeElement?.textContent || '');
-            const fileMentions = emailText.match(/\b\w+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?)\b/gi);
-            if (fileMentions) {
-                attachments = attachments.concat(fileMentions);
-            }
-
-            // Remove duplicates and format
-            const uniqueAttachments = [...new Set(attachments)];
-            if (uniqueAttachments.length > 0) {
-                context.attachments = uniqueAttachments.join(', ');
+            console.log('Starting enhanced attachment extraction...');
+            
+            // Enhanced Gmail attachment detection
+            const attachmentInfo = await this.getGmailAttachments();
+            
+            if (attachmentInfo.length > 0) {
+                context.attachments = attachmentInfo.map(att => att.name).join(', ');
+                context.attachmentFiles = attachmentInfo; // Store file objects for upload
+                console.log('Found attachments:', context.attachments);
+            } else {
+                // Fallback to text-based detection
+                await this.extractAttachmentNames(context);
             }
 
         } catch (error) {
             console.error('Attachment extraction error:', error);
+            // Fallback to basic text extraction
+            await this.extractAttachmentNames(context);
         }
 
         return context;
+    }
+
+    async extractAttachmentNames(context) {
+        // Original text-based attachment detection as fallback
+        const attachmentSelectors = [
+            '[aria-label*="attachment"]',
+            '[title*="attachment"]',
+            '.aZo', // Gmail attachment class
+            '.aZo span[email]', // Gmail attachment with name
+            '.aQy', // Gmail attachment indicator
+            '[data-tooltip*="attachment"]'
+        ];
+
+        let attachments = [];
+
+        attachmentSelectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+                const text = el.textContent || el.getAttribute('aria-label') || el.getAttribute('title');
+                if (text && text.trim()) {
+                    // Extract file names and types
+                    const fileMatch = text.match(/([^\/\\]+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?))/gi);
+                    if (fileMatch) {
+                        attachments = attachments.concat(fileMatch);
+                    }
+                }
+            });
+        });
+
+        // Also check for file mentions in the email text
+        const emailText = context.originalEmail + (document.activeElement?.textContent || '');
+        const fileMentions = emailText.match(/\b\w+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?)\b/gi);
+        if (fileMentions) {
+            attachments = attachments.concat(fileMentions);
+        }
+
+        // Remove duplicates and format
+        const uniqueAttachments = [...new Set(attachments)];
+        if (uniqueAttachments.length > 0) {
+            context.attachments = uniqueAttachments.join(', ');
+        }
+    }
+
+    async getGmailAttachments() {
+        try {
+            console.log('Searching for Gmail attachments...');
+            const attachmentFiles = [];
+
+            // Look for attachment download links in Gmail
+            const attachmentLinks = document.querySelectorAll('a[download], a[href*="attachment"], span[role="link"][data-tooltip*="Download"]');
+            
+            for (const link of attachmentLinks) {
+                try {
+                    const fileName = link.getAttribute('download') || 
+                                   link.textContent?.trim() || 
+                                   link.getAttribute('data-tooltip') || 
+                                   'attachment';
+                    
+                    const href = link.getAttribute('href');
+                    
+                    if (href && (href.includes('attachment') || href.includes('download'))) {
+                        // Try to get file content if it's an accessible link
+                        const fileInfo = await this.extractFileFromLink(link, fileName);
+                        if (fileInfo) {
+                            attachmentFiles.push(fileInfo);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Error processing attachment link:', error);
+                }
+            }
+
+            // Also look for inline images that could be attachments
+            const inlineImages = document.querySelectorAll('img[src*="ci"], img[src*="attachment"]');
+            for (const img of inlineImages) {
+                try {
+                    const src = img.getAttribute('src');
+                    if (src && (src.includes('ci') || src.includes('attachment'))) {
+                        const fileInfo = await this.extractFileFromImage(img);
+                        if (fileInfo) {
+                            attachmentFiles.push(fileInfo);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Error processing inline image:', error);
+                }
+            }
+
+            console.log(`Found ${attachmentFiles.length} accessible attachments`);
+            return attachmentFiles;
+
+        } catch (error) {
+            console.error('Gmail attachment detection error:', error);
+            return [];
+        }
+    }
+
+    async extractFileFromLink(link, fileName) {
+        try {
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('javascript:') || href.startsWith('#')) {
+                return null;
+            }
+
+            // For Gmail, attachment links often require authentication
+            // We'll return the link info for now and handle download later
+            return {
+                name: fileName,
+                type: this.guessFileType(fileName),
+                url: href,
+                element: link
+            };
+
+        } catch (error) {
+            console.warn('Error extracting file from link:', error);
+            return null;
+        }
+    }
+
+    async extractFileFromImage(img) {
+        try {
+            const src = img.getAttribute('src');
+            const alt = img.getAttribute('alt') || 'image';
+            
+            if (src && src.startsWith('data:')) {
+                // Data URL - can extract directly
+                const mimeMatch = src.match(/data:([^;]+)/);
+                const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+                
+                return {
+                    name: alt + '.' + this.getExtensionFromMime(mimeType),
+                    type: mimeType,
+                    dataUrl: src,
+                    element: img
+                };
+            } else if (src) {
+                // External URL - return info for later processing
+                return {
+                    name: alt + '.jpg', // Default extension
+                    type: 'image/jpeg',
+                    url: src,
+                    element: img
+                };
+            }
+
+            return null;
+        } catch (error) {
+            console.warn('Error extracting file from image:', error);
+            return null;
+        }
+    }
+
+    guessFileType(fileName) {
+        const ext = fileName.split('.').pop()?.toLowerCase();
+        const mimeTypes = {
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'txt': 'text/plain',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'csv': 'text/csv',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        };
+        return mimeTypes[ext] || 'application/octet-stream';
+    }
+
+    getExtensionFromMime(mimeType) {
+        const extensions = {
+            'application/pdf': 'pdf',
+            'application/msword': 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+            'text/plain': 'txt',
+            'image/jpeg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'text/csv': 'csv',
+            'application/vnd.ms-excel': 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
+        };
+        return extensions[mimeType] || 'bin';
     }
 }
 
