@@ -271,6 +271,8 @@ class UniversalEmailAssistant {
                 console.warn('Could not load settings, using defaults');
             }
 
+            console.log('Sending context to Gemini:', emailContext);
+            
             const response = await this.overlayInstance.geminiService.generateResponse(
                 emailContext,
                 settings.geminiModel || 'gemini-1.5-flash',
@@ -323,40 +325,146 @@ class UniversalEmailAssistant {
     extractEmailContext(element) {
         const context = {
             subject: '',
+            senderName: '',
+            senderEmail: '',
             recipient: '',
             originalEmail: '',
             isReply: false,
             isForward: false,
-            attachments: ''
+            attachments: '',
+            conversationHistory: []
         };
 
         try {
-            // Look for subject field
+            console.log('Extracting email context...');
+
+            // Get subject from compose window
             const subjectField = document.querySelector('input[name="subjectbox"]') ||
-                                document.querySelector('[aria-label*="Subject"]');
+                                document.querySelector('[aria-label*="Subject"]') ||
+                                document.querySelector('[placeholder*="Subject"]');
             if (subjectField) {
                 context.subject = subjectField.value || '';
-                context.isReply = context.subject.toLowerCase().startsWith('re:');
-                context.isForward = context.subject.toLowerCase().startsWith('fwd:');
+                context.isReply = context.subject.toLowerCase().includes('re:');
+                context.isForward = context.subject.toLowerCase().includes('fwd:') || 
+                                   context.subject.toLowerCase().includes('fw:');
             }
 
-            // Look for quoted text in replies
-            if (context.isReply || context.isForward) {
-                const quotedText = document.querySelector('.gmail_quote') ||
-                                 document.querySelector('[class*="quote"]');
-                if (quotedText) {
-                    context.originalEmail = quotedText.textContent.substring(0, 1000);
-                }
-            }
+            // Extract the original email content from the conversation thread
+            this.extractOriginalEmailContent(context);
+
+            // Get sender and recipient information
+            this.extractParticipantInfo(context);
 
             // Look for attachments in the email
             this.extractAttachments(context);
+            
+            console.log('Extracted context:', context);
             
         } catch (error) {
             console.error('Context extraction error:', error);
         }
 
         return context;
+    }
+
+    extractOriginalEmailContent(context) {
+        try {
+            // Look for the conversation thread - Gmail stores messages in specific containers
+            const messageContainers = document.querySelectorAll('[data-message-id]');
+            
+            if (messageContainers.length > 0) {
+                // Get the most recent message (usually the last one, but we want the one we're replying to)
+                let targetMessage = null;
+                
+                // If this is a reply, get the message before the compose area
+                if (context.isReply || context.isForward) {
+                    targetMessage = messageContainers[messageContainers.length - 1];
+                }
+                
+                if (targetMessage) {
+                    // Extract sender information from the message header
+                    const senderElement = targetMessage.querySelector('[email]') ||
+                                         targetMessage.querySelector('.go span[email]') ||
+                                         targetMessage.querySelector('.gD[email]');
+                    
+                    if (senderElement) {
+                        context.senderEmail = senderElement.getAttribute('email') || '';
+                        context.senderName = senderElement.getAttribute('name') || 
+                                           senderElement.textContent || 
+                                           context.senderEmail.split('@')[0];
+                    }
+
+                    // Extract the message content
+                    const messageBody = targetMessage.querySelector('.ii.gt') ||
+                                       targetMessage.querySelector('[dir="ltr"]') ||
+                                       targetMessage.querySelector('.a3s.aiL');
+                    
+                    if (messageBody) {
+                        let emailText = messageBody.textContent || '';
+                        
+                        // Clean up the email text
+                        emailText = emailText
+                            .replace(/\s+/g, ' ')
+                            .replace(/On .* wrote:.*$/g, '')
+                            .replace(/From:.*?Subject:.*?\n/gs, '')
+                            .trim();
+                        
+                        context.originalEmail = emailText.substring(0, 2000);
+                    }
+                }
+            }
+
+            // Fallback: look for quoted text in the compose area
+            if (!context.originalEmail && (context.isReply || context.isForward)) {
+                const quotedText = document.querySelector('.gmail_quote') ||
+                                 document.querySelector('[class*="quote"]') ||
+                                 document.querySelector('.gmail_extra');
+                
+                if (quotedText) {
+                    let emailText = quotedText.textContent || '';
+                    emailText = emailText
+                        .replace(/On .* wrote:/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    context.originalEmail = emailText.substring(0, 2000);
+                }
+            }
+
+        } catch (error) {
+            console.error('Original email extraction error:', error);
+        }
+    }
+
+    extractParticipantInfo(context) {
+        try {
+            // If we haven't found sender info yet, try other methods
+            if (!context.senderName || !context.senderEmail) {
+                // Look in the thread view
+                const threadSender = document.querySelector('.gD[email]') ||
+                                   document.querySelector('.go span[email]') ||
+                                   document.querySelector('[email]');
+                
+                if (threadSender) {
+                    context.senderEmail = threadSender.getAttribute('email') || '';
+                    context.senderName = threadSender.getAttribute('name') || 
+                                       threadSender.textContent ||
+                                       context.senderEmail.split('@')[0];
+                }
+            }
+
+            // Get recipient info from compose window
+            const recipientField = document.querySelector('[aria-label*="To"]') ||
+                                 document.querySelector('.vR .vM') ||
+                                 document.querySelector('.az9 span[email]');
+            
+            if (recipientField) {
+                context.recipient = recipientField.getAttribute('email') || 
+                                  recipientField.textContent || '';
+            }
+
+        } catch (error) {
+            console.error('Participant info extraction error:', error);
+        }
     }
 
     extractAttachments(context) {

@@ -522,58 +522,76 @@ class GeminiService {
     }
 
     buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments = false) {
-        let prompt = `You are an AI email assistant. Your task is to analyze the provided email and write a personalized, contextual response - NOT a template.\n\n`;
+        let prompt = `You are an AI email assistant. Write a specific email response based on the exact context provided below.\n\n`;
         
-        prompt += `IMPORTANT: Generate a specific, personalized response that directly addresses the content and context of the email. Do NOT provide generic templates or placeholder text.\n\n`;
+        prompt += `CRITICAL INSTRUCTIONS:\n`;
+        prompt += `- Only respond to what was actually mentioned in the original email\n`;
+        prompt += `- Do NOT make up information or add topics not discussed\n`;
+        prompt += `- Use the actual sender's name (no placeholders like [Name])\n`;
+        prompt += `- Keep responses focused and concise\n`;
+        prompt += `- Do NOT include generic advice unless specifically requested\n\n`;
+        
+        // Build the email context clearly
+        prompt += `EMAIL CONTEXT:\n`;
+        
+        if (emailContext.senderName && emailContext.senderEmail) {
+            prompt += `Sender: ${emailContext.senderName} (${emailContext.senderEmail})\n`;
+        } else if (emailContext.senderName) {
+            prompt += `Sender: ${emailContext.senderName}\n`;
+        } else if (emailContext.senderEmail) {
+            prompt += `Sender: ${emailContext.senderEmail}\n`;
+        }
         
         if (emailContext.subject) {
             prompt += `Subject: ${emailContext.subject}\n`;
         }
         
-        if (emailContext.recipient) {
-            prompt += `To: ${emailContext.recipient}\n`;
-        }
-        
         if (emailContext.originalEmail) {
-            prompt += `Email to respond to:\n${emailContext.originalEmail}\n\n`;
+            prompt += `\nOriginal message:\n"${emailContext.originalEmail}"\n\n`;
+        } else {
+            prompt += `\nThis appears to be a new email composition.\n\n`;
         }
         
         if (analyzeAttachments && emailContext.attachments) {
-            prompt += `Attached files mentioned in the email:\n${emailContext.attachments}\n`;
-            prompt += `Please reference these attachments appropriately in your response when relevant.\n\n`;
+            prompt += `Attachments mentioned: ${emailContext.attachments}\n\n`;
         }
         
-        prompt += `Write a ${tone} response that:\n`;
-        
+        // Set tone-specific instructions
+        let toneInstructions = '';
         switch (tone) {
             case 'formal':
-                prompt += `- Uses professional language and proper business etiquette\n- Is respectful and courteous\n- Maintains appropriate formality\n`;
+                toneInstructions = 'professional and respectful';
                 break;
             case 'casual':
-                prompt += `- Uses friendly, conversational language\n- Is approachable and relaxed\n- Feels natural and informal\n`;
+                toneInstructions = 'friendly and conversational';
                 break;
             case 'brief':
-                prompt += `- Is concise and to the point\n- Gets straight to the main message\n- Avoids unnecessary elaboration\n`;
+                toneInstructions = 'concise and direct';
                 break;
             case 'detailed':
-                prompt += `- Provides comprehensive information\n- Includes relevant details and context\n- Thoroughly addresses all points\n`;
+                toneInstructions = 'comprehensive but focused';
                 break;
             case 'friendly':
-                prompt += `- Is warm and personable\n- Shows genuine interest and care\n- Creates a positive connection\n`;
+                toneInstructions = 'warm and personable';
                 break;
             case 'professional':
-                prompt += `- Maintains business standards\n- Is clear and competent\n- Demonstrates expertise\n`;
+                toneInstructions = 'business-appropriate and competent';
                 break;
+            default:
+                toneInstructions = 'professional';
         }
         
-        prompt += `\nResponse requirements:\n`;
-        prompt += `- Directly addresses the specific content and requests in the original email\n`;
-        prompt += `- Is contextually appropriate for the relationship and situation\n`;
-        prompt += `- Shows understanding of the sender's message and intent\n`;
-        prompt += `- Provides relevant, actionable information when needed\n`;
-        prompt += `- Does not include a signature (the user will add their own)\n`;
-        prompt += `- Is approximately ${Math.floor(maxTokens * 0.75)} words\n\n`;
-        prompt += `Write the response now:`;
+        prompt += `RESPONSE REQUIREMENTS:\n`;
+        prompt += `- Write in a ${toneInstructions} tone\n`;
+        prompt += `- Address only the specific points mentioned in the original email\n`;
+        prompt += `- Use the sender's actual name (${emailContext.senderName || 'the sender'})\n`;
+        prompt += `- Keep response under ${Math.floor(maxTokens * 0.75)} words\n`;
+        prompt += `- Do not include signature or closing (user will add their own)\n`;
+        prompt += `- Be specific and relevant to the actual request\n\n`;
+        
+        prompt += `Write the email response now:`;
+        
+        console.log('Generated prompt for Gemini:', prompt);
         
         return prompt;
     }
