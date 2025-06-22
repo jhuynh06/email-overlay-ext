@@ -8,6 +8,7 @@ class EmailOverlay {
         this.isVisible = false;
         this.isGenerating = false;
         this.settings = {
+            selectedModel: 'gemini-1.5-pro',
             selectedTone: 'formal',
             maxTokens: 300,
             temperature: 0.7
@@ -26,11 +27,13 @@ class EmailOverlay {
     async loadSettings() {
         try {
             const result = await chrome.storage.sync.get([
+                'geminiModel',
                 'defaultTone',
                 'maxTokens',
                 'temperature'
             ]);
             
+            if (result.geminiModel) this.settings.selectedModel = result.geminiModel;
             if (result.defaultTone) this.settings.selectedTone = result.defaultTone;
             if (result.maxTokens) this.settings.maxTokens = result.maxTokens;
             if (result.temperature) this.settings.temperature = result.temperature;
@@ -220,6 +223,7 @@ class EmailOverlay {
             // Generate response
             const response = await this.geminiService.generateResponse(
                 this.emailContext,
+                this.settings.selectedModel,
                 this.settings.selectedTone,
                 this.settings.maxTokens,
                 this.settings.temperature
@@ -344,7 +348,7 @@ class EmailOverlay {
         
         // Generate summary
         try {
-            const summary = await this.geminiService.generateSummary(this.emailContext);
+            const summary = await this.geminiService.generateSummary(this.emailContext, this.settings.selectedModel);
             modal.querySelector('#ai-summary-text').innerHTML = summary;
         } catch (error) {
             modal.querySelector('#ai-summary-text').textContent = 'Error generating summary. Please try again.';
@@ -367,7 +371,7 @@ class EmailOverlay {
 class GeminiService {
     constructor() {
         this.apiKey = null;
-        this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+        this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
         this.loadApiKey();
     }
 
@@ -380,7 +384,7 @@ class GeminiService {
         }
     }
 
-    async generateResponse(emailContext, tone, maxTokens, temperature) {
+    async generateResponse(emailContext, model, tone, maxTokens, temperature) {
         if (!this.apiKey) {
             await this.loadApiKey();
             if (!this.apiKey) {
@@ -391,7 +395,8 @@ class GeminiService {
         const prompt = this.buildResponsePrompt(emailContext, tone, maxTokens);
         
         try {
-            const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+            const selectedModel = model || 'gemini-1.5-pro';
+            const response = await fetch(`${this.baseUrl}/${selectedModel}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -427,7 +432,7 @@ class GeminiService {
         }
     }
 
-    async generateSummary(emailContext) {
+    async generateSummary(emailContext, model) {
         if (!this.apiKey) {
             await this.loadApiKey();
             if (!this.apiKey) {
@@ -438,7 +443,8 @@ class GeminiService {
         const prompt = this.buildSummaryPrompt(emailContext);
         
         try {
-            const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+            const selectedModel = model || 'gemini-1.5-pro';
+            const response = await fetch(`${this.baseUrl}/${selectedModel}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -23,6 +23,7 @@ class BackgroundService {
         if (details.reason === 'install') {
             // Set default settings
             chrome.storage.sync.set({
+                geminiModel: 'gemini-1.5-pro',
                 defaultTone: 'formal',
                 maxTokens: 300,
                 temperature: 0.7
@@ -74,6 +75,7 @@ class BackgroundService {
         return new Promise((resolve) => {
             chrome.storage.sync.get([
                 'geminiApiKey',
+                'geminiModel',
                 'defaultTone',
                 'maxTokens',
                 'temperature'
@@ -94,7 +96,7 @@ class BackgroundService {
     async testApiKey(apiKey) {
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: {
@@ -125,8 +127,9 @@ class BackgroundService {
         }
 
         try {
+            const selectedModel = settings.geminiModel || 'gemini-1.5-pro';
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${settings.geminiApiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${settings.geminiApiKey}`,
                 {
                     method: 'POST',
                     headers: {
@@ -171,8 +174,9 @@ class BackgroundService {
         }
 
         try {
+            const selectedModel = settings.geminiModel || 'gemini-1.5-pro';
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${settings.geminiApiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${settings.geminiApiKey}`,
                 {
                     method: 'POST',
                     headers: {

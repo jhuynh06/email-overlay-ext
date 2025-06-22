@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('settingsForm');
     const apiKeyInput = document.getElementById('apiKey');
+    const geminiModelSelect = document.getElementById('geminiModel');
     const defaultToneSelect = document.getElementById('defaultTone');
     const maxTokensSelect = document.getElementById('maxTokens');
     const temperatureSelect = document.getElementById('temperature');
@@ -35,6 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const result = await chrome.storage.sync.get([
                 'geminiApiKey',
+                'geminiModel',
                 'defaultTone',
                 'maxTokens',
                 'temperature'
@@ -42,6 +44,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (result.geminiApiKey) {
                 apiKeyInput.value = result.geminiApiKey;
+            }
+            if (result.geminiModel) {
+                geminiModelSelect.value = result.geminiModel;
             }
             if (result.defaultTone) {
                 defaultToneSelect.value = result.defaultTone;
@@ -71,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             await chrome.storage.sync.set({
                 geminiApiKey: apiKey,
+                geminiModel: geminiModelSelect.value,
                 defaultTone: defaultToneSelect.value,
                 maxTokens: parseInt(maxTokensSelect.value),
                 temperature: parseFloat(temperatureSelect.value)
@@ -107,7 +113,8 @@ document.addEventListener('DOMContentLoaded', function() {
             testBtn.textContent = 'Testing...';
             testBtn.disabled = true;
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+            const selectedModel = geminiModelSelect.value || 'gemini-1.5-pro';
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
