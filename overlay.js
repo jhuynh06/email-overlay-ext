@@ -623,11 +623,18 @@ class GeminiService {
         }
         
         if (uploadedFiles && uploadedFiles.length > 0) {
-            prompt += `\nUploaded files for analysis (${uploadedFiles.length} files):\n`;
+            prompt += `\nI can see the attached files:\n`;
             uploadedFiles.forEach((file, index) => {
-                prompt += `${index + 1}. ${file.fileName} (${file.mimeType})\n`;
+                prompt += `${index + 1}. ${file.fileName}\n`;
             });
-            prompt += `\nPlease analyze the content of these uploaded files and reference them specifically in your response. Provide insights based on what you can see in the files.\n\n`;
+            prompt += `\nIMPORTANT FOR MULTIMODAL RESPONSES:\n`;
+            prompt += `- React naturally to what you see in the attachments\n`;
+            prompt += `- Use conversational language appropriate for the email tone\n`;
+            prompt += `- Comment on interesting, impressive, or noteworthy aspects\n`;
+            prompt += `- Don't just list technical details - respond like a human would\n`;
+            prompt += `- If it's something cool/impressive, express that appropriately\n`;
+            prompt += `- If it's informational, acknowledge and discuss relevantly\n`;
+            prompt += `- Match the sender's energy and communication style\n\n`;
         } else if (analyzeAttachments && emailContext.attachments) {
             prompt += `\n`;
         }
@@ -665,7 +672,35 @@ class GeminiService {
         prompt += `- Do not include signature or closing (user will add their own)\n`;
         prompt += `- Do NOT include subject line, headers, or email metadata\n`;
         prompt += `- ONLY provide the message body content\n`;
-        prompt += `- Be specific and relevant to the actual request\n\n`;
+        prompt += `- Be specific and relevant to the actual request\n`;
+        
+        // Add specific multimodal response guidance
+        if (uploadedFiles && uploadedFiles.length > 0) {
+            prompt += `\nMULTIMODAL RESPONSE GUIDANCE:\n`;
+            prompt += `- Respond naturally to what you observe in the attachments\n`;
+            prompt += `- Use appropriate emotional reactions (wow, impressive, interesting, etc.)\n`;
+            prompt += `- Avoid listing raw technical details unless directly relevant\n`;
+            prompt += `- Focus on the most notable or remarkable aspects\n`;
+            prompt += `- Match the sender's communication style and energy level\n`;
+            
+            // Add contextual examples based on tone
+            switch (tone) {
+                case 'casual':
+                case 'friendly':
+                    prompt += `- For casual contexts: "Dude, that's actually pretty sick!" or "Wow, those stats look solid!"\n`;
+                    prompt += `- React with appropriate enthusiasm and relatability\n`;
+                    break;
+                case 'formal':
+                case 'professional':
+                    prompt += `- For formal contexts: "Thank you for sharing this information" or "I've reviewed the attached document"\n`;
+                    prompt += `- Maintain professionalism while showing engagement\n`;
+                    break;
+                default:
+                    prompt += `- Adjust reaction appropriateness to the context and relationship\n`;
+            }
+        }
+        
+        prompt += `\n`;
         
         prompt += `Write ONLY the email message body now (no subject, no headers):`;
         
