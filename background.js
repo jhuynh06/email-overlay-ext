@@ -23,7 +23,7 @@ class BackgroundService {
         if (details.reason === 'install') {
             // Set default settings
             chrome.storage.sync.set({
-                geminiModel: 'gemini-1.5-pro',
+                geminiModel: 'gemini-1.5-flash',
                 defaultTone: 'formal',
                 maxTokens: 300,
                 temperature: 0.7
@@ -95,8 +95,9 @@ class BackgroundService {
 
     async testApiKey(apiKey) {
         try {
+            // Use Flash model for testing - better rate limits
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: {
@@ -105,12 +106,20 @@ class BackgroundService {
                     body: JSON.stringify({
                         contents: [{
                             parts: [{
-                                text: 'Test message'
+                                text: 'Hello'
                             }]
-                        }]
+                        }],
+                        generationConfig: {
+                            maxOutputTokens: 10
+                        }
                     })
                 }
             );
+
+            if (response.status === 429) {
+                // Rate limited but API key works
+                return true;
+            }
 
             return response.ok;
         } catch (error) {

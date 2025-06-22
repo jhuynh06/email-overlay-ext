@@ -411,42 +411,84 @@ class GeminiService {
 
         const prompt = this.buildResponsePrompt(emailContext, tone, maxTokens);
         
-        try {
-            const selectedModel = model || 'gemini-1.5-pro';
-            const response = await fetch(`${this.baseUrl}/${selectedModel}:generateContent?key=${this.apiKey}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }],
-                    generationConfig: {
-                        temperature: temperature,
-                        maxOutputTokens: Math.min(maxTokens * 4, 2048) // Rough word to token conversion
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
+        // Use Flash model for better rate limits and faster responses
+        const selectedModel = model || 'gemini-1.5-flash';
+        
+        return this.makeRequestWithRetry(selectedModel, {
+            contents: [{
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: temperature,
+                maxOutputTokens: Math.min(maxTokens * 4, 1024), // Reduced for Flash model
+                topK: 40,
+                topP: 0.95
             }
+        });
+    }
 
-            const data = await response.json();
-            
-            if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                return data.candidates[0].content.parts[0].text.trim();
-            } else {
-                throw new Error('No response content received');
+    async makeRequestWithRetry(model, requestBody, maxRetries = 3) {
+        let lastError;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`Gemini API attempt ${attempt}/${maxRetries} with model: ${model}`);
+                
+                const response = await fetch(`${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (response.status === 429) {
+                    // Rate limit hit - wait with exponential backoff
+                    const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+                    console.log(`Rate limit hit, waiting ${waitTime}ms before retry...`);
+                    await this.sleep(waitTime);
+                    continue;
+                }
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API request failed: ${response.status} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                } else {
+                    throw new Error('No response content received');
+                }
+                
+            } catch (error) {
+                lastError = error;
+                console.error(`Gemini API attempt ${attempt} failed:`, error);
+                
+                // If it's a 429 error, continue to retry
+                if (error.message.includes('429') && attempt < maxRetries) {
+                    const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                    console.log(`Retrying after ${waitTime}ms...`);
+                    await this.sleep(waitTime);
+                    continue;
+                }
+                
+                // For other errors, don't retry immediately
+                if (attempt < maxRetries) {
+                    await this.sleep(1000); // Short wait for other errors
+                }
             }
-            
-        } catch (error) {
-            console.error('Gemini API error:', error);
-            throw error;
         }
+        
+        throw lastError || new Error('Max retries exceeded');
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async generateSummary(emailContext, model) {
@@ -459,43 +501,24 @@ class GeminiService {
 
         const prompt = this.buildSummaryPrompt(emailContext);
         
-        try {
-            const selectedModel = model || 'gemini-1.5-pro';
-            const response = await fetch(`${this.baseUrl}/${selectedModel}:generateContent?key=${this.apiKey}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }],
-                    generationConfig: {
-                        temperature: 0.3,
-                        maxOutputTokens: 500
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
+        // Use Flash model for better rate limits
+        const selectedModel = model || 'gemini-1.5-flash';
+        
+        const response = await this.makeRequestWithRetry(selectedModel, {
+            contents: [{
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 512,
+                topK: 20,
+                topP: 0.8
             }
-
-            const data = await response.json();
-            
-            if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                const summaryText = data.candidates[0].content.parts[0].text.trim();
-                return this.formatSummary(summaryText);
-            } else {
-                throw new Error('No summary content received');
-            }
-            
-        } catch (error) {
-            console.error('Gemini API error:', error);
-            throw error;
-        }
+        });
+        
+        return this.formatSummary(response);
     }
 
     buildResponsePrompt(emailContext, tone, maxTokens) {

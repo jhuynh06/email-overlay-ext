@@ -262,13 +262,21 @@ class UniversalEmailAssistant {
                 this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
             }
             
-            // Generate response
+            // Generate response with user's settings or defaults
+            let settings = { geminiModel: 'gemini-1.5-flash', defaultTone: 'formal' };
+            try {
+                const stored = await chrome.storage.sync.get(['geminiModel', 'defaultTone', 'maxTokens', 'temperature']);
+                settings = { ...settings, ...stored };
+            } catch (e) {
+                console.warn('Could not load settings, using defaults');
+            }
+
             const response = await this.overlayInstance.geminiService.generateResponse(
                 emailContext,
-                'gemini-1.5-pro', // default model
-                'formal', // default tone
-                300, // max tokens
-                0.7   // temperature
+                settings.geminiModel || 'gemini-1.5-flash',
+                settings.defaultTone || 'formal',
+                settings.maxTokens || 300,
+                settings.temperature || 0.7
             );
             
             if (response) {
