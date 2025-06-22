@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const maxTokensSelect = document.getElementById('maxTokens');
     const temperatureSelect = document.getElementById('temperature');
     const analyzeAttachmentsCheckbox = document.getElementById('analyzeAttachments');
+    const translationLanguageSelect = document.getElementById('translationLanguage');
     const saveBtn = document.getElementById('saveBtn');
     const testBtn = document.getElementById('testBtn');
     const statusDiv = document.getElementById('status');
@@ -41,7 +42,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 'defaultTone',
                 'maxTokens',
                 'temperature',
-                'analyzeAttachments'
+                'analyzeAttachments',
+                'translationLanguage'
             ]);
 
             if (result.geminiApiKey) {
@@ -61,6 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (result.analyzeAttachments !== undefined) {
                 analyzeAttachmentsCheckbox.checked = result.analyzeAttachments;
+            }
+            if (result.translationLanguage) {
+                translationLanguageSelect.value = result.translationLanguage;
             }
         } catch (error) {
             showStatus('Error loading settings', 'error');
@@ -85,7 +90,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 defaultTone: defaultToneSelect.value,
                 maxTokens: parseInt(maxTokensSelect.value),
                 temperature: parseFloat(temperatureSelect.value),
-                analyzeAttachments: analyzeAttachmentsCheckbox.checked
+                analyzeAttachments: analyzeAttachmentsCheckbox.checked,
+                translationLanguage: translationLanguageSelect.value
             });
 
             showStatus('Settings saved successfully!', 'success');

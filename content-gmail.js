@@ -275,7 +275,7 @@ class UniversalEmailAssistant {
             try {
                 const stored = await chrome.storage.sync.get([
                     'geminiModel', 'defaultTone', 'maxTokens', 'temperature', 
-                    'analyzeAttachments', 'assistantOptions'
+                    'analyzeAttachments', 'assistantOptions', 'translationLanguage'
                 ]);
                 settings = { ...settings, ...stored };
                 assistantOptions = stored.assistantOptions || assistantOptions;
@@ -312,9 +312,11 @@ class UniversalEmailAssistant {
                         
                     case 'analyzeEmail':
                         console.log('Starting email analysis...');
+                        const targetLanguage = settings.translationLanguage || 'English';
                         const analysis = await this.overlayInstance.geminiService.generateSummary(
                             emailContext,
-                            settings.geminiModel || 'gemini-1.5-flash'
+                            settings.geminiModel || 'gemini-1.5-flash',
+                            targetLanguage
                         );
                         
                         if (analysis) {
@@ -326,8 +328,18 @@ class UniversalEmailAssistant {
                         
                     case 'translateEmail':
                         console.log('Starting translation...');
-                        this.showTranslationPlaceholder();
-                        results.push('Translation (coming soon)');
+                        const translationLanguage = settings.translationLanguage || 'English';
+                        const translation = await this.overlayInstance.geminiService.translateEmail(
+                            emailContext,
+                            settings.geminiModel || 'gemini-1.5-flash',
+                            translationLanguage
+                        );
+                        
+                        if (translation) {
+                            this.showTranslationModal(translation, translationLanguage);
+                            results.push('Email translated');
+                            console.log('Translation completed');
+                        }
                         break;
                         
                     default:
@@ -400,6 +412,67 @@ class UniversalEmailAssistant {
         const closeElements = modal.querySelectorAll('.ai-options-close, [data-action="close"]');
         closeElements.forEach(el => {
             el.addEventListener('click', () => this.hideOptionsModal(modal));
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.hideOptionsModal(modal);
+            }
+        });
+    }
+
+    showTranslationModal(translation, targetLanguage) {
+        // Create translation modal
+        const modal = document.createElement('div');
+        modal.className = 'ai-options-modal';
+        
+        modal.innerHTML = `
+            <div class="ai-options-content">
+                <div class="ai-options-header">
+                    <h3>Email Translation (${targetLanguage})</h3>
+                    <button class="ai-options-close" type="button">×</button>
+                </div>
+                
+                <div class="ai-options-body">
+                    <div class="ai-options-section">
+                        <div style="
+                            background: rgba(255, 255, 255, 0.1);
+                            border-radius: 12px;
+                            padding: 20px;
+                            line-height: 1.6;
+                            font-size: 14px;
+                            white-space: pre-wrap;
+                        ">
+                            ${translation}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="ai-options-footer">
+                    <button class="ai-options-btn ai-options-btn-secondary" type="button" data-action="copy">Copy Translation</button>
+                    <button class="ai-options-btn ai-options-btn-primary" type="button" data-action="close">Close</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        setTimeout(() => modal.classList.add('show'), 10);
+        
+        // Close functionality
+        const closeElements = modal.querySelectorAll('.ai-options-close, [data-action="close"]');
+        closeElements.forEach(el => {
+            el.addEventListener('click', () => this.hideOptionsModal(modal));
+        });
+
+        // Copy functionality
+        const copyBtn = modal.querySelector('[data-action="copy"]');
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(translation).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Translation';
+                }, 2000);
+            });
         });
         
         modal.addEventListener('click', (e) => {
@@ -528,7 +601,7 @@ class UniversalEmailAssistant {
                             <input type="radio" name="assistantAction" id="opt-translate" value="translateEmail" ${settings.selectedAction === 'translateEmail' ? 'checked' : ''}>
                             <div class="ai-option-details">
                                 <div class="ai-option-title">Translate Email</div>
-                                <div class="ai-option-description">Translate the email content to your preferred language. (Coming soon)</div>
+                                <div class="ai-option-description">Translate the email content to your preferred language.</div>
                             </div>
                         </div>
                     </div>

@@ -619,6 +619,54 @@ class GeminiService {
         return prompt;
     }
 
+    async translateEmail(emailContext, model, targetLanguage = 'English') {
+        if (!this.apiKey) {
+            await this.loadApiKey();
+            if (!this.apiKey) {
+                throw new Error('API key not configured');
+            }
+        }
+
+        const prompt = this.buildTranslationPrompt(emailContext, targetLanguage);
+        
+        // Use Flash model for better rate limits
+        const selectedModel = model || 'gemini-1.5-flash';
+        
+        return this.makeRequestWithRetry(selectedModel, {
+            contents: [{
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 1024,
+                topK: 20,
+                topP: 0.8
+            }
+        });
+    }
+
+    buildTranslationPrompt(emailContext, targetLanguage) {
+        let prompt = `Please translate the following email content to ${targetLanguage}. Maintain the original tone and meaning.\n\n`;
+        
+        if (emailContext.subject) {
+            prompt += `Subject: ${emailContext.subject}\n`;
+        }
+        
+        if (emailContext.originalEmail) {
+            prompt += `Email content:\n${emailContext.originalEmail}\n\n`;
+        } else {
+            prompt += `This appears to be a new email composition.\n\n`;
+        }
+        
+        prompt += `Please provide a natural translation that preserves the original meaning and tone. Format the response as:\n`;
+        prompt += `Subject: [translated subject]\n`;
+        prompt += `Body: [translated email body]`;
+        
+        return prompt;
+    }
+
     formatSummary(summaryText) {
         // Basic formatting to highlight key information
         return summaryText

@@ -479,6 +479,22 @@
     cursor: pointer !important;
 }
 
+/* Highlight entire radio button option when selected */
+.ai-option-item:has(input[type="radio"]:checked) {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border: 2px solid rgba(255, 255, 255, 0.4) !important;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
+}
+
+.ai-option-item:has(input[type="radio"]:checked) .ai-option-title {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+
+.ai-option-item:has(input[type="radio"]:checked) .ai-option-description {
+    color: rgba(255, 255, 255, 0.95) !important;
+}
+
 .ai-option-details {
     flex: 1 !important;
 }
