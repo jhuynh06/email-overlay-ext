@@ -251,7 +251,7 @@ class UniversalEmailAssistant {
         const originalText = generateBtn.textContent;
         
         try {
-            generateBtn.textContent = 'Generating...';
+            generateBtn.textContent = 'Processing...';
             generateBtn.style.opacity = '0.7';
             
             // Extract email context
@@ -262,29 +262,78 @@ class UniversalEmailAssistant {
                 this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
             }
             
-            // Generate response with user's settings or defaults
-            let settings = { geminiModel: 'gemini-1.5-flash', defaultTone: 'formal', analyzeAttachments: false };
+            // Load all settings
+            let settings = { 
+                geminiModel: 'gemini-1.5-flash', 
+                defaultTone: 'formal', 
+                analyzeAttachments: false 
+            };
+            let assistantOptions = {
+                generateResponse: true,
+                analyzeEmail: false,
+                translateEmail: false
+            };
+            
             try {
-                const stored = await chrome.storage.sync.get(['geminiModel', 'defaultTone', 'maxTokens', 'temperature', 'analyzeAttachments']);
+                const stored = await chrome.storage.sync.get([
+                    'geminiModel', 'defaultTone', 'maxTokens', 'temperature', 
+                    'analyzeAttachments', 'assistantOptions'
+                ]);
                 settings = { ...settings, ...stored };
+                assistantOptions = stored.assistantOptions || assistantOptions;
             } catch (e) {
                 console.warn('Could not load settings, using defaults');
             }
 
+            console.log('Assistant options:', assistantOptions);
             console.log('Sending context to Gemini:', emailContext);
+
+            let results = [];
             
-            const response = await this.overlayInstance.geminiService.generateResponse(
-                emailContext,
-                settings.geminiModel || 'gemini-1.5-flash',
-                settings.defaultTone || 'formal',
-                settings.maxTokens || 300,
-                settings.temperature || 0.7,
-                settings.analyzeAttachments || false
-            );
+            // Perform selected actions
+            if (assistantOptions.generateResponse) {
+                const response = await this.overlayInstance.geminiService.generateResponse(
+                    emailContext,
+                    settings.geminiModel || 'gemini-1.5-flash',
+                    settings.defaultTone || 'formal',
+                    settings.maxTokens || 300,
+                    settings.temperature || 0.7,
+                    settings.analyzeAttachments || false
+                );
+                
+                if (response) {
+                    this.insertResponse(textElement, response);
+                    results.push('Response generated');
+                }
+            }
             
-            if (response) {
-                this.insertResponse(textElement, response);
+            if (assistantOptions.analyzeEmail) {
+                const analysis = await this.overlayInstance.geminiService.generateSummary(
+                    emailContext,
+                    settings.geminiModel || 'gemini-1.5-flash'
+                );
+                
+                if (analysis) {
+                    this.showAnalysisModal(analysis);
+                    results.push('Email analyzed');
+                }
+            }
+            
+            if (assistantOptions.translateEmail) {
+                // TODO: Implement translation functionality
+                results.push('Translation (coming soon)');
+                this.showTranslationPlaceholder();
+            }
+            
+            // Update button text based on results
+            if (results.length > 0) {
                 generateBtn.textContent = 'Regenerate';
+                console.log('Completed actions:', results);
+            } else {
+                generateBtn.textContent = 'No actions selected';
+                setTimeout(() => {
+                    generateBtn.textContent = originalText;
+                }, 2000);
             }
             
         } catch (error) {
@@ -298,10 +347,307 @@ class UniversalEmailAssistant {
         }
     }
 
-    handleMenuClick() {
+    showAnalysisModal(analysis) {
+        // Create analysis modal
+        const modal = document.createElement('div');
+        modal.className = 'ai-options-modal';
+        
+        modal.innerHTML = `
+            <div class="ai-options-content">
+                <div class="ai-options-header">
+                    <h3>Email Analysis</h3>
+                    <button class="ai-options-close" type="button">×</button>
+                </div>
+                
+                <div class="ai-options-body">
+                    <div class="ai-options-section">
+                        <div style="
+                            background: rgba(255, 255, 255, 0.1);
+                            border-radius: 12px;
+                            padding: 20px;
+                            line-height: 1.6;
+                            font-size: 14px;
+                        ">
+                            ${analysis}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="ai-options-footer">
+                    <button class="ai-options-btn ai-options-btn-primary" type="button" data-action="close">Close</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        setTimeout(() => modal.classList.add('show'), 10);
+        
+        // Close functionality
+        const closeElements = modal.querySelectorAll('.ai-options-close, [data-action="close"]');
+        closeElements.forEach(el => {
+            el.addEventListener('click', () => this.hideOptionsModal(modal));
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.hideOptionsModal(modal);
+            }
+        });
+    }
+
+    showTranslationPlaceholder() {
+        // Show a brief notification that translation is coming soon
+        const message = document.createElement('div');
+        message.textContent = 'Translation feature coming soon!';
+        message.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #FF9800;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 999999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        `;
+        
+        document.body.appendChild(message);
+        
+        setTimeout(() => {
+            message.style.opacity = '1';
+            message.style.transform = 'translateY(0)';
+        }, 10);
+        
+        setTimeout(() => {
+            message.style.opacity = '0';
+            message.style.transform = 'translateY(-10px)';
+            setTimeout(() => {
+                if (document.contains(message)) {
+                    message.remove();
+                }
+            }, 300);
+        }, 2500);
+    }
+
+    async handleMenuClick() {
         console.log('Menu button clicked');
-        // TODO: Implement dropdown menu
-        alert('Menu feature coming soon!');
+        this.showOptionsModal();
+    }
+
+    async showOptionsModal() {
+        // Remove existing modal if any
+        const existingModal = document.querySelector('.ai-options-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Load current settings
+        let settings = await this.loadAssistantOptions();
+
+        // Create modal
+        const modal = this.createOptionsModal(settings);
+        document.body.appendChild(modal);
+
+        // Show modal
+        setTimeout(() => modal.classList.add('show'), 10);
+
+        // Attach event listeners
+        this.attachModalEventListeners(modal, settings);
+    }
+
+    async loadAssistantOptions() {
+        try {
+            const result = await chrome.storage.sync.get([
+                'assistantOptions'
+            ]);
+            
+            return result.assistantOptions || {
+                generateResponse: true,
+                analyzeEmail: false,
+                translateEmail: false
+            };
+        } catch (error) {
+            console.error('Error loading assistant options:', error);
+            return {
+                generateResponse: true,
+                analyzeEmail: false,
+                translateEmail: false
+            };
+        }
+    }
+
+    createOptionsModal(settings) {
+        const modal = document.createElement('div');
+        modal.className = 'ai-options-modal';
+        
+        modal.innerHTML = `
+            <div class="ai-options-content">
+                <div class="ai-options-header">
+                    <h3>AI Assistant Options</h3>
+                    <button class="ai-options-close" type="button">×</button>
+                </div>
+                
+                <div class="ai-options-body">
+                    <div class="ai-options-section">
+                        <h4>Choose Actions</h4>
+                        <p>Select which actions you want the AI assistant to perform when you click the generate button.</p>
+                        
+                        <div class="ai-option-item" data-option="generateResponse">
+                            <input type="checkbox" id="opt-generate" ${settings.generateResponse ? 'checked' : ''}>
+                            <div class="ai-option-details">
+                                <div class="ai-option-title">Generate Email Response</div>
+                                <div class="ai-option-description">Create a contextual reply based on the original email content and your chosen tone.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="ai-option-item" data-option="analyzeEmail">
+                            <input type="checkbox" id="opt-analyze" ${settings.analyzeEmail ? 'checked' : ''}>
+                            <div class="ai-option-details">
+                                <div class="ai-option-title">Analyze & Summarize Email</div>
+                                <div class="ai-option-description">Provide a summary of key points, action items, and important details from the email.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="ai-option-item" data-option="translateEmail">
+                            <input type="checkbox" id="opt-translate" ${settings.translateEmail ? 'checked' : ''}>
+                            <div class="ai-option-details">
+                                <div class="ai-option-title">Translate Email</div>
+                                <div class="ai-option-description">Translate the email content to your preferred language. (Coming soon)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="ai-options-footer">
+                    <button class="ai-options-btn ai-options-btn-secondary" type="button" data-action="cancel">Cancel</button>
+                    <button class="ai-options-btn ai-options-btn-primary" type="button" data-action="save">Save Options</button>
+                </div>
+            </div>
+        `;
+        
+        return modal;
+    }
+
+    attachModalEventListeners(modal, settings) {
+        // Close button
+        const closeBtn = modal.querySelector('.ai-options-close');
+        closeBtn.addEventListener('click', () => this.hideOptionsModal(modal));
+
+        // Cancel button
+        const cancelBtn = modal.querySelector('[data-action="cancel"]');
+        cancelBtn.addEventListener('click', () => this.hideOptionsModal(modal));
+
+        // Save button
+        const saveBtn = modal.querySelector('[data-action="save"]');
+        saveBtn.addEventListener('click', () => this.saveOptionsModal(modal));
+
+        // Click outside to close
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.hideOptionsModal(modal);
+            }
+        });
+
+        // Checkbox toggle on item click
+        const optionItems = modal.querySelectorAll('.ai-option-item');
+        optionItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.type !== 'checkbox') {
+                    const checkbox = item.querySelector('input[type="checkbox"]');
+                    checkbox.checked = !checkbox.checked;
+                }
+            });
+        });
+
+        // ESC key to close
+        const handleEscKey = (e) => {
+            if (e.key === 'Escape') {
+                this.hideOptionsModal(modal);
+                document.removeEventListener('keydown', handleEscKey);
+            }
+        };
+        document.addEventListener('keydown', handleEscKey);
+    }
+
+    hideOptionsModal(modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            if (document.contains(modal)) {
+                modal.remove();
+            }
+        }, 300);
+    }
+
+    async saveOptionsModal(modal) {
+        const settings = {
+            generateResponse: modal.querySelector('#opt-generate').checked,
+            analyzeEmail: modal.querySelector('#opt-analyze').checked,
+            translateEmail: modal.querySelector('#opt-translate').checked
+        };
+
+        try {
+            await chrome.storage.sync.set({
+                assistantOptions: settings
+            });
+            
+            console.log('Assistant options saved:', settings);
+            this.hideOptionsModal(modal);
+            
+            // Show brief success indication
+            this.showSuccessMessage();
+            
+        } catch (error) {
+            console.error('Error saving assistant options:', error);
+            alert('Error saving options. Please try again.');
+        }
+    }
+
+    showSuccessMessage() {
+        // Create a brief success message
+        const message = document.createElement('div');
+        message.textContent = 'Options saved!';
+        message.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 999999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        `;
+        
+        document.body.appendChild(message);
+        
+        // Animate in
+        setTimeout(() => {
+            message.style.opacity = '1';
+            message.style.transform = 'translateY(0)';
+        }, 10);
+        
+        // Remove after 2 seconds
+        setTimeout(() => {
+            message.style.opacity = '0';
+            message.style.transform = 'translateY(-10px)';
+            setTimeout(() => {
+                if (document.contains(message)) {
+                    message.remove();
+                }
+            }, 300);
+        }, 2000);
     }
 
     insertResponse(textElement, response) {
