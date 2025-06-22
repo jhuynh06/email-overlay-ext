@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const maxTokensSelect = document.getElementById('maxTokens');
     const temperatureSelect = document.getElementById('temperature');
     const analyzeAttachmentsCheckbox = document.getElementById('analyzeAttachments');
+    const multimodalAnalysisCheckbox = document.getElementById('multimodalAnalysis');
     const translationLanguageSelect = document.getElementById('translationLanguage');
     const saveBtn = document.getElementById('saveBtn');
     const testBtn = document.getElementById('testBtn');
@@ -34,6 +35,21 @@ document.addEventListener('DOMContentLoaded', function() {
         testApiConnection();
     });
 
+    // Handle multimodal analysis dependency
+    analyzeAttachmentsCheckbox.addEventListener('change', function() {
+        if (!this.checked) {
+            multimodalAnalysisCheckbox.checked = false;
+            multimodalAnalysisCheckbox.disabled = true;
+        } else {
+            multimodalAnalysisCheckbox.disabled = false;
+        }
+    });
+
+    // Initialize dependency state
+    if (!analyzeAttachmentsCheckbox.checked) {
+        multimodalAnalysisCheckbox.disabled = true;
+    }
+
     async function loadSettings() {
         try {
             const result = await chrome.storage.sync.get([
@@ -43,6 +59,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'maxTokens',
                 'temperature',
                 'analyzeAttachments',
+                'multimodalAnalysis',
                 'translationLanguage'
             ]);
 
@@ -63,6 +80,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (result.analyzeAttachments !== undefined) {
                 analyzeAttachmentsCheckbox.checked = result.analyzeAttachments;
+            }
+            if (result.multimodalAnalysis !== undefined) {
+                multimodalAnalysisCheckbox.checked = result.multimodalAnalysis;
             }
             if (result.translationLanguage) {
                 translationLanguageSelect.value = result.translationLanguage;
@@ -91,6 +111,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 maxTokens: parseInt(maxTokensSelect.value),
                 temperature: parseFloat(temperatureSelect.value),
                 analyzeAttachments: analyzeAttachmentsCheckbox.checked,
+                multimodalAnalysis: multimodalAnalysisCheckbox.checked,
                 translationLanguage: translationLanguageSelect.value
             });
 

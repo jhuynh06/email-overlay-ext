@@ -365,7 +365,7 @@ class UniversalEmailAssistant {
             try {
                 const stored = await chrome.storage.sync.get([
                     'geminiModel', 'defaultTone', 'maxTokens', 'temperature', 
-                    'analyzeAttachments', 'assistantOptions', 'translationLanguage'
+                    'analyzeAttachments', 'multimodalAnalysis', 'assistantOptions', 'translationLanguage'
                 ]);
                 settings = { ...settings, ...stored };
                 assistantOptions = stored.assistantOptions || assistantOptions;
@@ -390,7 +390,8 @@ class UniversalEmailAssistant {
                             settings.defaultTone || 'formal',
                             settings.maxTokens || 300,
                             settings.temperature || 0.7,
-                            settings.analyzeAttachments || false
+                            settings.analyzeAttachments || false,
+                            settings.multimodalAnalysis || false
                         );
                         
                         if (response) {
@@ -406,7 +407,9 @@ class UniversalEmailAssistant {
                         const analysis = await this.overlayInstance.geminiService.generateSummary(
                             emailContext,
                             settings.geminiModel || 'gemini-1.5-flash',
-                            targetLanguage
+                            targetLanguage,
+                            settings.analyzeAttachments || false,
+                            settings.multimodalAnalysis || false
                         );
                         
                         if (analysis) {
