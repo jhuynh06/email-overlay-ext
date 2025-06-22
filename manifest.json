@@ -21,7 +21,7 @@
       ],
       "js": ["overlay.js", "content-gmail.js"],
       "css": ["overlay.css"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     },
     {
       "matches": [
@@ -30,7 +30,7 @@
       ],
       "js": ["overlay.js", "content-outlook.js"],
       "css": ["overlay.css"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ],
   "background": {
