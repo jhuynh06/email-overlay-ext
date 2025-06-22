@@ -259,7 +259,16 @@ class UniversalEmailAssistant {
             
             // Create overlay instance if needed
             if (!this.overlayInstance) {
-                this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
+                try {
+                    this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
+                } catch (error) {
+                    if (error.message.includes('Extension context invalidated')) {
+                        console.log('Extension context invalidated during overlay creation - reloading page...');
+                        window.location.reload();
+                        return;
+                    }
+                    throw error;
+                }
             }
             
             // Load all settings
@@ -282,7 +291,13 @@ class UniversalEmailAssistant {
                 settings = { ...settings, ...stored };
                 assistantOptions = stored.assistantOptions || assistantOptions;
             } catch (e) {
-                console.warn('Could not load settings, using defaults');
+                console.warn('Could not load settings, using defaults:', e.message);
+                // If extension context is invalidated, reload the page
+                if (e.message.includes('Extension context invalidated')) {
+                    console.log('Extension context invalidated - reloading page...');
+                    window.location.reload();
+                    return;
+                }
             }
 
             console.log('Assistant options:', assistantOptions);
@@ -310,6 +325,11 @@ class UniversalEmailAssistant {
                     }
                 } catch (error) {
                     console.error('Response generation failed:', error);
+                    if (error.message.includes('Extension context invalidated') || error.message.includes('please refresh')) {
+                        console.log('Extension context invalidated during response generation - reloading page...');
+                        window.location.reload();
+                        return;
+                    }
                     results.push('Response generation failed');
                 }
             }
@@ -329,6 +349,11 @@ class UniversalEmailAssistant {
                     }
                 } catch (error) {
                     console.error('Email analysis failed:', error);
+                    if (error.message.includes('Extension context invalidated') || error.message.includes('please refresh')) {
+                        console.log('Extension context invalidated during email analysis - reloading page...');
+                        window.location.reload();
+                        return;
+                    }
                     results.push('Email analysis failed');
                 }
             }
@@ -467,6 +492,11 @@ class UniversalEmailAssistant {
 
         // Load current settings
         let settings = await this.loadAssistantOptions();
+        
+        // If settings is null (context invalidated), don't show modal
+        if (settings === null) {
+            return;
+        }
 
         // Create modal
         const modal = this.createOptionsModal(settings);
@@ -492,6 +522,12 @@ class UniversalEmailAssistant {
             };
         } catch (error) {
             console.error('Error loading assistant options:', error);
+            // If extension context is invalidated, reload the page
+            if (error.message.includes('Extension context invalidated')) {
+                console.log('Extension context invalidated - reloading page...');
+                window.location.reload();
+                return null;
+            }
             return {
                 generateResponse: true,
                 analyzeEmail: false,
@@ -622,6 +658,12 @@ class UniversalEmailAssistant {
             
         } catch (error) {
             console.error('Error saving assistant options:', error);
+            // If extension context is invalidated, reload the page
+            if (error.message.includes('Extension context invalidated')) {
+                alert('Extension was reloaded. Please refresh the page and try again.');
+                window.location.reload();
+                return;
+            }
             alert('Error saving options. Please try again.');
         }
     }

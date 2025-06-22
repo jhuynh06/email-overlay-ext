@@ -39,6 +39,10 @@ class EmailOverlay {
             if (result.temperature) this.settings.temperature = result.temperature;
         } catch (error) {
             console.error('Error loading settings:', error);
+            // If extension context is invalidated, throw specific error
+            if (error.message.includes('Extension context invalidated')) {
+                throw new Error('Extension context invalidated - please refresh the page');
+            }
         }
     }
 
@@ -398,6 +402,10 @@ class GeminiService {
             this.apiKey = result.geminiApiKey;
         } catch (error) {
             console.error('Error loading API key:', error);
+            // If extension context is invalidated, throw specific error
+            if (error.message.includes('Extension context invalidated')) {
+                throw new Error('Extension context invalidated - please refresh the page');
+            }
         }
     }
 
