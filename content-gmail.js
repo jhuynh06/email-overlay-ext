@@ -3,7 +3,7 @@ class UniversalEmailAssistant {
     constructor() {
         this.activeButton = null;
         this.activeElement = null;
-        this.overlayInstance = null;
+        this.geminiService = new GeminiService();
         
         console.log('Email Assistant: Initializing...');
         this.init();
@@ -257,11 +257,6 @@ class UniversalEmailAssistant {
             // Extract email context
             const emailContext = this.extractEmailContext(textElement);
             
-            // Create overlay instance if needed
-            if (!this.overlayInstance) {
-                this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
-            }
-            
             // Load all settings
             let settings = { 
                 geminiModel: 'gemini-1.5-flash', 
@@ -294,7 +289,7 @@ class UniversalEmailAssistant {
             if (assistantOptions.generateResponse) {
                 try {
                     console.log('Starting response generation...');
-                    const response = await this.overlayInstance.geminiService.generateResponse(
+                    const response = await this.geminiService.generateResponse(
                         emailContext,
                         settings.geminiModel || 'gemini-1.5-flash',
                         settings.defaultTone || 'formal',
@@ -317,7 +312,7 @@ class UniversalEmailAssistant {
             if (assistantOptions.analyzeEmail) {
                 try {
                     console.log('Starting email analysis...');
-                    const analysis = await this.overlayInstance.geminiService.generateSummary(
+                    const analysis = await this.geminiService.generateSummary(
                         emailContext,
                         settings.geminiModel || 'gemini-1.5-flash'
                     );
@@ -877,6 +872,252 @@ class UniversalEmailAssistant {
         }
 
         return context;
+    }
+}
+
+// Gemini API Service
+class GeminiService {
+    constructor() {
+        this.apiKey = null;
+        this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+        this.loadApiKey();
+    }
+
+    async loadApiKey() {
+        try {
+            const result = await chrome.storage.sync.get(['geminiApiKey']);
+            this.apiKey = result.geminiApiKey;
+        } catch (error) {
+            console.error('Error loading API key:', error);
+        }
+    }
+
+    async generateResponse(emailContext, model, tone, maxTokens, temperature, analyzeAttachments = false) {
+        if (!this.apiKey) {
+            await this.loadApiKey();
+            if (!this.apiKey) {
+                throw new Error('API key not configured');
+            }
+        }
+
+        const prompt = this.buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments);
+        
+        // Use Flash model for better rate limits and faster responses
+        const selectedModel = model || 'gemini-1.5-flash';
+        
+        return this.makeRequestWithRetry(selectedModel, {
+            contents: [{
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: temperature,
+                maxOutputTokens: Math.min(maxTokens * 4, 1024), // Reduced for Flash model
+                topK: 40,
+                topP: 0.95
+            }
+        });
+    }
+
+    async makeRequestWithRetry(model, requestBody, maxRetries = 3) {
+        let lastError;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`Gemini API attempt ${attempt}/${maxRetries} with model: ${model}`);
+                
+                const response = await fetch(`${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (response.status === 429) {
+                    // Rate limit hit - wait with exponential backoff
+                    const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+                    console.log(`Rate limit hit, waiting ${waitTime}ms before retry...`);
+                    await this.sleep(waitTime);
+                    continue;
+                }
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API request failed: ${response.status} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                    return data.candidates[0].content.parts[0].text.trim();
+                } else {
+                    throw new Error('No response content received');
+                }
+                
+            } catch (error) {
+                lastError = error;
+                console.error(`Gemini API attempt ${attempt} failed:`, error);
+                
+                // If it's a 429 error, continue to retry
+                if (error.message.includes('429') && attempt < maxRetries) {
+                    const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                    console.log(`Retrying after ${waitTime}ms...`);
+                    await this.sleep(waitTime);
+                    continue;
+                }
+                
+                // For other errors, don't retry immediately
+                if (attempt < maxRetries) {
+                    await this.sleep(1000); // Short wait for other errors
+                }
+            }
+        }
+        
+        throw lastError || new Error('Max retries exceeded');
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async generateSummary(emailContext, model) {
+        if (!this.apiKey) {
+            await this.loadApiKey();
+            if (!this.apiKey) {
+                throw new Error('API key not configured');
+            }
+        }
+
+        const prompt = this.buildSummaryPrompt(emailContext);
+        
+        // Use Flash model for better rate limits
+        const selectedModel = model || 'gemini-1.5-flash';
+        
+        const response = await this.makeRequestWithRetry(selectedModel, {
+            contents: [{
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 512,
+                topK: 20,
+                topP: 0.8
+            }
+        });
+        
+        return this.formatSummary(response);
+    }
+
+    buildResponsePrompt(emailContext, tone, maxTokens, analyzeAttachments = false) {
+        let prompt = `You are an AI email assistant. Write a specific email response based on the exact context provided below.\n\n`;
+        
+        prompt += `CRITICAL INSTRUCTIONS:\n`;
+        prompt += `- Only respond to what was actually mentioned in the original email\n`;
+        prompt += `- Do NOT make up information or add topics not discussed\n`;
+        prompt += `- Use the actual sender's name (no placeholders like [Name])\n`;
+        prompt += `- Keep responses focused and concise\n`;
+        prompt += `- Do NOT include generic advice unless specifically requested\n\n`;
+        
+        // Build the email context clearly
+        prompt += `EMAIL CONTEXT:\n`;
+        
+        if (emailContext.senderName && emailContext.senderEmail) {
+            prompt += `Sender: ${emailContext.senderName} (${emailContext.senderEmail})\n`;
+        } else if (emailContext.senderName) {
+            prompt += `Sender: ${emailContext.senderName}\n`;
+        } else if (emailContext.senderEmail) {
+            prompt += `Sender: ${emailContext.senderEmail}\n`;
+        }
+        
+        if (emailContext.subject) {
+            prompt += `Subject: ${emailContext.subject}\n`;
+        }
+        
+        if (emailContext.originalEmail) {
+            prompt += `\nOriginal message:\n"${emailContext.originalEmail}"\n\n`;
+        } else {
+            prompt += `\nThis appears to be a new email composition.\n\n`;
+        }
+        
+        if (analyzeAttachments && emailContext.attachments) {
+            prompt += `Attachments mentioned: ${emailContext.attachments}\n\n`;
+        }
+        
+        // Set tone-specific instructions
+        let toneInstructions = '';
+        switch (tone) {
+            case 'formal':
+                toneInstructions = 'professional and respectful';
+                break;
+            case 'casual':
+                toneInstructions = 'friendly and conversational';
+                break;
+            case 'brief':
+                toneInstructions = 'concise and direct';
+                break;
+            case 'detailed':
+                toneInstructions = 'comprehensive but focused';
+                break;
+            case 'friendly':
+                toneInstructions = 'warm and personable';
+                break;
+            case 'professional':
+                toneInstructions = 'business-appropriate and competent';
+                break;
+            default:
+                toneInstructions = 'professional';
+        }
+        
+        prompt += `RESPONSE REQUIREMENTS:\n`;
+        prompt += `- Write in a ${toneInstructions} tone\n`;
+        prompt += `- Address only the specific points mentioned in the original email\n`;
+        prompt += `- Use the sender's actual name (${emailContext.senderName || 'the sender'})\n`;
+        prompt += `- Keep response under ${Math.floor(maxTokens * 0.75)} words\n`;
+        prompt += `- Do not include signature or closing (user will add their own)\n`;
+        prompt += `- Be specific and relevant to the actual request\n\n`;
+        
+        prompt += `Write the email response now:`;
+        
+        console.log('Generated prompt for Gemini:', prompt);
+        
+        return prompt;
+    }
+
+    buildSummaryPrompt(emailContext) {
+        let prompt = `Please provide a concise summary of this email, highlighting key points and any action items:\n\n`;
+        
+        if (emailContext.subject) {
+            prompt += `Subject: ${emailContext.subject}\n`;
+        }
+        
+        if (emailContext.originalEmail) {
+            prompt += `Email content:\n${emailContext.originalEmail}\n\n`;
+        } else {
+            prompt += `This appears to be a new email composition.\n\n`;
+        }
+        
+        prompt += `Please provide:\n`;
+        prompt += `1. A brief summary of the main topic\n`;
+        prompt += `2. Key points mentioned\n`;
+        prompt += `3. Any action items or requests\n`;
+        prompt += `4. Important dates or deadlines (if mentioned)\n\n`;
+        prompt += `Format the response with <strong> tags around important terms and <span class="highlight"> tags around action items.`;
+        
+        return prompt;
+    }
+
+    formatSummary(summaryText) {
+        // Basic formatting to highlight key information
+        return summaryText
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}-\d{1,2}-\d{2,4})/g, '<span class="highlight">$1</span>')
+            .replace(/(action|task|todo|deadline|due|urgent|important)/gi, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
     }
 }
 
