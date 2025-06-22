@@ -290,39 +290,57 @@ class UniversalEmailAssistant {
 
             let results = [];
             
-            // Perform selected actions
+            // Perform selected actions - each independently with error handling
             if (assistantOptions.generateResponse) {
-                const response = await this.overlayInstance.geminiService.generateResponse(
-                    emailContext,
-                    settings.geminiModel || 'gemini-1.5-flash',
-                    settings.defaultTone || 'formal',
-                    settings.maxTokens || 300,
-                    settings.temperature || 0.7,
-                    settings.analyzeAttachments || false
-                );
-                
-                if (response) {
-                    this.insertResponse(textElement, response);
-                    results.push('Response generated');
+                try {
+                    console.log('Starting response generation...');
+                    const response = await this.overlayInstance.geminiService.generateResponse(
+                        emailContext,
+                        settings.geminiModel || 'gemini-1.5-flash',
+                        settings.defaultTone || 'formal',
+                        settings.maxTokens || 300,
+                        settings.temperature || 0.7,
+                        settings.analyzeAttachments || false
+                    );
+                    
+                    if (response) {
+                        this.insertResponse(textElement, response);
+                        results.push('Response generated');
+                        console.log('Response generation completed');
+                    }
+                } catch (error) {
+                    console.error('Response generation failed:', error);
+                    results.push('Response generation failed');
                 }
             }
             
             if (assistantOptions.analyzeEmail) {
-                const analysis = await this.overlayInstance.geminiService.generateSummary(
-                    emailContext,
-                    settings.geminiModel || 'gemini-1.5-flash'
-                );
-                
-                if (analysis) {
-                    this.showAnalysisModal(analysis);
-                    results.push('Email analyzed');
+                try {
+                    console.log('Starting email analysis...');
+                    const analysis = await this.overlayInstance.geminiService.generateSummary(
+                        emailContext,
+                        settings.geminiModel || 'gemini-1.5-flash'
+                    );
+                    
+                    if (analysis) {
+                        this.showAnalysisModal(analysis);
+                        results.push('Email analyzed');
+                        console.log('Email analysis completed');
+                    }
+                } catch (error) {
+                    console.error('Email analysis failed:', error);
+                    results.push('Email analysis failed');
                 }
             }
             
             if (assistantOptions.translateEmail) {
-                // TODO: Implement translation functionality
-                results.push('Translation (coming soon)');
-                this.showTranslationPlaceholder();
+                try {
+                    console.log('Starting translation...');
+                    this.showTranslationPlaceholder();
+                    results.push('Translation (coming soon)');
+                } catch (error) {
+                    console.error('Translation failed:', error);
+                }
             }
             
             // Update button text based on results
