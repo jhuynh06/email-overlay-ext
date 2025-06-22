@@ -472,7 +472,7 @@
     transform: translateY(-1px) !important;
 }
 
-.ai-option-item input[type="checkbox"] {
+.ai-option-item input[type="radio"] {
     margin: 2px 12px 0 0 !important;
     transform: scale(1.3) !important;
     accent-color: #ffffff !important;
