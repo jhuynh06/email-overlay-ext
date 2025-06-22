@@ -825,11 +825,14 @@ class UniversalEmailAssistant {
     }
 
     insertResponse(textElement, response) {
+        // Clean the response before inserting
+        const cleanResponse = this.cleanGeminiResponse(response);
+        
         // Insert response into the text element
         if (textElement.contentEditable === 'true' || textElement.isContentEditable) {
-            textElement.innerHTML = response.replace(/\n/g, '<br>');
+            textElement.innerHTML = cleanResponse.replace(/\n/g, '<br>');
         } else {
-            textElement.value = response;
+            textElement.value = cleanResponse;
         }
         
         // Trigger events
@@ -840,6 +843,36 @@ class UniversalEmailAssistant {
         });
         
         textElement.focus();
+    }
+
+    cleanGeminiResponse(response) {
+        if (!response) return '';
+        
+        let cleanedResponse = response.trim();
+        
+        // Remove subject lines that Gemini sometimes includes
+        cleanedResponse = cleanedResponse.replace(/^Subject:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^Re:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^Fwd?:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^Subject Line:\s*.*$/gim, '');
+        
+        // Remove email headers that might appear
+        cleanedResponse = cleanedResponse.replace(/^From:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^To:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^Date:\s*.*$/gim, '');
+        cleanedResponse = cleanedResponse.replace(/^Sent:\s*.*$/gim, '');
+        
+        // Remove lines that start with typical email metadata
+        cleanedResponse = cleanedResponse.replace(/^(From|To|Cc|Bcc|Date|Sent|Subject):\s*.*$/gim, '');
+        
+        // Remove empty lines at the beginning and end
+        cleanedResponse = cleanedResponse.replace(/^\s*\n+/g, '');
+        cleanedResponse = cleanedResponse.replace(/\n+\s*$/g, '');
+        
+        // Remove multiple consecutive empty lines
+        cleanedResponse = cleanedResponse.replace(/\n\s*\n\s*\n/g, '\n\n');
+        
+        return cleanedResponse.trim();
     }
 
     extractEmailContext(element) {

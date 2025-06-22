@@ -587,9 +587,11 @@ class GeminiService {
         prompt += `- Use the sender's actual name (${emailContext.senderName || 'the sender'})\n`;
         prompt += `- Keep response under ${Math.floor(maxTokens * 0.75)} words\n`;
         prompt += `- Do not include signature or closing (user will add their own)\n`;
+        prompt += `- Do NOT include subject line, headers, or email metadata\n`;
+        prompt += `- ONLY provide the message body content\n`;
         prompt += `- Be specific and relevant to the actual request\n\n`;
         
-        prompt += `Write the email response now:`;
+        prompt += `Write ONLY the email message body now (no subject, no headers):`;
         
         console.log('Generated prompt for Gemini:', prompt);
         
