@@ -53,6 +53,20 @@
             box-sizing: border-box;
         }
         
+        /* Fix dropdown option colors */
+        .form-group select option {
+            background: white;
+            color: black;
+            padding: 8px;
+        }
+        
+        .form-group select option:hover,
+        .form-group select option:checked,
+        .form-group select option:focus {
+            background: #667eea;
+            color: white;
+        }
+        
         .form-group input::placeholder {
             color: rgba(255, 255, 255, 0.7);
         }
@@ -147,6 +161,29 @@
         .advanced-content.show {
             display: block;
         }
+        
+        /* Checkbox styling */
+        .checkbox-label {
+            display: flex !important;
+            align-items: center !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            margin-bottom: 8px !important;
+        }
+        
+        .checkbox-label input[type="checkbox"] {
+            width: auto !important;
+            margin-right: 12px !important;
+            transform: scale(1.2) !important;
+            accent-color: #667eea !important;
+        }
+        
+        .setting-description {
+            margin: 4px 0 0 0 !important;
+            font-size: 12px !important;
+            color: rgba(255, 255, 255, 0.7) !important;
+            line-height: 1.4 !important;
+        }
     </style>
 </head>
 <body>
@@ -201,6 +238,15 @@
                         <option value="0.7" selected>Balanced</option>
                         <option value="0.9">Creative</option>
                     </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="analyzeAttachments">
+                        <span class="checkmark"></span>
+                        Analyze Email Attachments
+                    </label>
+                    <p class="setting-description">Enable AI analysis of attached files (PDFs, documents, images) to provide more contextual responses</p>
                 </div>
             </div>
         </div>

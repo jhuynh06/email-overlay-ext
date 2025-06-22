@@ -263,9 +263,9 @@ class UniversalEmailAssistant {
             }
             
             // Generate response with user's settings or defaults
-            let settings = { geminiModel: 'gemini-1.5-flash', defaultTone: 'formal' };
+            let settings = { geminiModel: 'gemini-1.5-flash', defaultTone: 'formal', analyzeAttachments: false };
             try {
-                const stored = await chrome.storage.sync.get(['geminiModel', 'defaultTone', 'maxTokens', 'temperature']);
+                const stored = await chrome.storage.sync.get(['geminiModel', 'defaultTone', 'maxTokens', 'temperature', 'analyzeAttachments']);
                 settings = { ...settings, ...stored };
             } catch (e) {
                 console.warn('Could not load settings, using defaults');
@@ -276,7 +276,8 @@ class UniversalEmailAssistant {
                 settings.geminiModel || 'gemini-1.5-flash',
                 settings.defaultTone || 'formal',
                 settings.maxTokens || 300,
-                settings.temperature || 0.7
+                settings.temperature || 0.7,
+                settings.analyzeAttachments || false
             );
             
             if (response) {
@@ -325,7 +326,8 @@ class UniversalEmailAssistant {
             recipient: '',
             originalEmail: '',
             isReply: false,
-            isForward: false
+            isForward: false,
+            attachments: ''
         };
 
         try {
@@ -346,8 +348,60 @@ class UniversalEmailAssistant {
                     context.originalEmail = quotedText.textContent.substring(0, 1000);
                 }
             }
+
+            // Look for attachments in the email
+            this.extractAttachments(context);
+            
         } catch (error) {
             console.error('Context extraction error:', error);
+        }
+
+        return context;
+    }
+
+    extractAttachments(context) {
+        try {
+            // Look for attachment indicators in Gmail
+            const attachmentSelectors = [
+                '[aria-label*="attachment"]',
+                '[title*="attachment"]',
+                '.aZo', // Gmail attachment class
+                '.aZo span[email]', // Gmail attachment with name
+                '.aQy', // Gmail attachment indicator
+                '[data-tooltip*="attachment"]'
+            ];
+
+            let attachments = [];
+
+            attachmentSelectors.forEach(selector => {
+                const elements = document.querySelectorAll(selector);
+                elements.forEach(el => {
+                    const text = el.textContent || el.getAttribute('aria-label') || el.getAttribute('title');
+                    if (text && text.trim()) {
+                        // Extract file names and types
+                        const fileMatch = text.match(/([^\/\\]+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?))/gi);
+                        if (fileMatch) {
+                            attachments = attachments.concat(fileMatch);
+                        }
+                    }
+                });
+            });
+
+            // Also check for file mentions in the email text
+            const emailText = context.originalEmail + (document.activeElement?.textContent || '');
+            const fileMentions = emailText.match(/\b\w+\.(pdf|doc|docx|txt|jpg|jpeg|png|gif|csv|xlsx?|pptx?)\b/gi);
+            if (fileMentions) {
+                attachments = attachments.concat(fileMentions);
+            }
+
+            // Remove duplicates and format
+            const uniqueAttachments = [...new Set(attachments)];
+            if (uniqueAttachments.length > 0) {
+                context.attachments = uniqueAttachments.join(', ');
+            }
+
+        } catch (error) {
+            console.error('Attachment extraction error:', error);
         }
 
         return context;
