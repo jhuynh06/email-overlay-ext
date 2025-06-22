@@ -352,7 +352,7 @@ class UniversalEmailAssistant {
                 this.overlayInstance = new EmailOverlay(textElement, emailContext, 'gmail');
             }
             
-            // Load all settings
+            // Load all settings via background script
             let settings = { 
                 geminiModel: 'gemini-1.5-flash', 
                 defaultTone: 'formal', 
@@ -363,14 +363,24 @@ class UniversalEmailAssistant {
             };
             
             try {
-                const stored = await chrome.storage.sync.get([
-                    'geminiModel', 'defaultTone', 'maxTokens', 'temperature', 
-                    'analyzeAttachments', 'assistantOptions', 'translationLanguage'
-                ]);
-                settings = { ...settings, ...stored };
-                assistantOptions = stored.assistantOptions || assistantOptions;
+                const response = await this.sendMessageToBackground({
+                    action: 'getSettings'
+                });
+                
+                if (response && response.success) {
+                    settings = { ...settings, ...response.data };
+                    assistantOptions = response.data.assistantOptions || assistantOptions;
+                } else {
+                    console.warn('Could not load settings from background, using defaults');
+                }
             } catch (e) {
-                console.warn('Could not load settings, using defaults');
+                console.warn('Could not communicate with background script:', e.message);
+                // Check if extension context is invalidated
+                if (e.message.includes('Extension context invalidated')) {
+                    console.log('Extension context invalidated, reloading page...');
+                    window.location.reload();
+                    return;
+                }
             }
 
             console.log('Assistant options:', assistantOptions);
@@ -640,19 +650,47 @@ class UniversalEmailAssistant {
 
     async loadAssistantOptions() {
         try {
-            const result = await chrome.storage.sync.get([
-                'assistantOptions'
-            ]);
+            const response = await this.sendMessageToBackground({
+                action: 'getSettings'
+            });
             
-            return result.assistantOptions || {
-                selectedAction: 'generateResponse'
-            };
+            if (response && response.success) {
+                return response.data.assistantOptions || {
+                    selectedAction: 'generateResponse'
+                };
+            } else {
+                return {
+                    selectedAction: 'generateResponse'
+                };
+            }
         } catch (error) {
             console.error('Error loading assistant options:', error);
+            // Check if extension context is invalidated
+            if (error.message && error.message.includes('Extension context invalidated')) {
+                console.log('Extension context invalidated, reloading page...');
+                window.location.reload();
+                return;
+            }
             return {
                 selectedAction: 'generateResponse'
             };
         }
+    }
+
+    async sendMessageToBackground(message) {
+        return new Promise((resolve, reject) => {
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(response);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     createOptionsModal(settings) {
@@ -766,18 +804,29 @@ class UniversalEmailAssistant {
         };
 
         try {
-            await chrome.storage.sync.set({
-                assistantOptions: settings
+            const response = await this.sendMessageToBackground({
+                action: 'saveSettings',
+                data: { assistantOptions: settings }
             });
             
-            console.log('Assistant options saved:', settings);
-            this.hideOptionsModal(modal);
-            
-            // Show brief success indication
-            this.showSuccessMessage();
+            if (response && response.success) {
+                console.log('Assistant options saved:', settings);
+                this.hideOptionsModal(modal);
+                
+                // Show brief success indication
+                this.showSuccessMessage();
+            } else {
+                throw new Error('Failed to save settings');
+            }
             
         } catch (error) {
             console.error('Error saving assistant options:', error);
+            // Check if extension context is invalidated
+            if (error.message && error.message.includes('Extension context invalidated')) {
+                console.log('Extension context invalidated, reloading page...');
+                window.location.reload();
+                return;
+            }
             alert('Error saving options. Please try again.');
         }
     }
@@ -1234,4 +1283,32 @@ class UniversalEmailAssistant {
 
 // Initialize the universal email assistant
 console.log('Loading Email Assistant...');
-new UniversalEmailAssistant();
+
+// Add error handling for extension context invalidation
+try {
+    new UniversalEmailAssistant();
+} catch (error) {
+    console.error('Failed to initialize Email Assistant:', error);
+    if (error.message && error.message.includes('Extension context invalidated')) {
+        console.log('Extension context invalidated during initialization, reloading page...');
+        window.location.reload();
+    }
+}
+
+// Add a global listener for extension context invalidation
+window.addEventListener('beforeunload', () => {
+    // Cleanup any timers or listeners
+});
+
+// Check for extension context invalidation periodically
+setInterval(() => {
+    try {
+        // Try to access chrome.runtime to check if context is still valid
+        if (chrome.runtime && chrome.runtime.id) {
+            // Context is still valid
+        }
+    } catch (error) {
+        console.log('Extension context invalidated, reloading page...');
+        window.location.reload();
+    }
+}, 30000); // Check every 30 seconds

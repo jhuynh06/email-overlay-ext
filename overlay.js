@@ -26,20 +26,42 @@ class EmailOverlay {
 
     async loadSettings() {
         try {
-            const result = await chrome.storage.sync.get([
-                'geminiModel',
-                'defaultTone',
-                'maxTokens',
-                'temperature'
-            ]);
+            const response = await this.sendMessageToBackground({
+                action: 'getSettings'
+            });
             
-            if (result.geminiModel) this.settings.selectedModel = result.geminiModel;
-            if (result.defaultTone) this.settings.selectedTone = result.defaultTone;
-            if (result.maxTokens) this.settings.maxTokens = result.maxTokens;
-            if (result.temperature) this.settings.temperature = result.temperature;
+            if (response && response.success) {
+                const result = response.data;
+                if (result.geminiModel) this.settings.selectedModel = result.geminiModel;
+                if (result.defaultTone) this.settings.selectedTone = result.defaultTone;
+                if (result.maxTokens) this.settings.maxTokens = result.maxTokens;
+                if (result.temperature) this.settings.temperature = result.temperature;
+            }
         } catch (error) {
             console.error('Error loading settings:', error);
+            // Check if extension context is invalidated
+            if (error.message && error.message.includes('Extension context invalidated')) {
+                console.log('Extension context invalidated, reloading page...');
+                window.location.reload();
+                return;
+            }
         }
+    }
+
+    async sendMessageToBackground(message) {
+        return new Promise((resolve, reject) => {
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(response);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     createOverlay() {
@@ -372,8 +394,8 @@ class EmailOverlay {
         }
     }
 
-    updateSettings() {
-        this.loadSettings();
+    async updateSettings() {
+        await this.loadSettings();
     }
 
     destroy() {
@@ -394,10 +416,23 @@ class GeminiService {
 
     async loadApiKey() {
         try {
-            const result = await chrome.storage.sync.get(['geminiApiKey']);
-            this.apiKey = result.geminiApiKey;
+            const response = await this.sendMessageToBackground({
+                action: 'getSettings'
+            });
+            
+            if (response && response.success) {
+                this.apiKey = response.data.geminiApiKey;
+            } else {
+                console.error('Failed to load API key from background');
+            }
         } catch (error) {
             console.error('Error loading API key:', error);
+            // Check if extension context is invalidated
+            if (error.message && error.message.includes('Extension context invalidated')) {
+                console.log('Extension context invalidated, reloading page...');
+                window.location.reload();
+                return;
+            }
         }
     }
 
